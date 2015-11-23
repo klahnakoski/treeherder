@@ -12,11 +12,11 @@ treeherder.provider('thServiceDomain', function() {
 
 treeherder.provider('thResultStatusList', function() {
     var all = function() {
-        return ['success', 'testfailed', 'busted', 'exception', 'retry', 'usercancel', 'running', 'pending', 'coalesced'];
+        return ['success', 'testfailed', 'busted', 'exception', 'retry', 'usercancel', 'running', 'pending', 'coalesced', 'runnable'];
     };
 
     var defaultFilters = function() {
-        return ['success', 'testfailed', 'busted', 'exception', 'retry', 'usercancel', 'running', 'pending'];
+        return ['success', 'testfailed', 'busted', 'exception', 'retry', 'usercancel', 'running', 'pending', 'runnable'];
     };
 
     this.$get = function() {
@@ -48,13 +48,13 @@ treeherder.provider('thResultStatusObject', function() {
             'running':0,
             'pending':0,
             'completed':0
-            };
+        };
     };
 
     this.$get = function() {
         return {
             getResultStatusObject:getResultStatusObject
-            };
+        };
     };
 });
 
@@ -63,77 +63,68 @@ treeherder.provider('thResultStatusInfo', function() {
         return function(resultState, failure_classification_id) {
             // default if there is no match, used for pending
             var resultStatusInfo = {
-                severity: 100,
                 btnClass: "btn-default"
             };
 
             switch (resultState) {
                 case "busted":
+                case "failures":
                     resultStatusInfo = {
-                        severity: 1,
                         btnClass: "btn-red",
                         countText: "busted"
                     };
                     break;
                 case "exception":
                     resultStatusInfo = {
-                        severity: 2,
                         btnClass: "btn-purple",
                         countText: "exception"
                     };
                     break;
                 case "testfailed":
                     resultStatusInfo = {
-                        severity: 3,
                         btnClass: "btn-orange",
                         countText: "failed"
                     };
                     break;
                 case "unknown":
                     resultStatusInfo = {
-                        severity: 4,
                         btnClass: "btn-yellow",
                         countText: "unknown"
                     };
                     break;
                 case "usercancel":
                     resultStatusInfo = {
-                        severity: 5,
                         btnClass: "btn-pink",
                         countText: "cancel"
                     };
                     break;
                 case "retry":
                     resultStatusInfo = {
-                        severity: 6,
                         btnClass: "btn-dkblue",
                         countText: "retry"
                     };
                     break;
                 case "success":
                     resultStatusInfo = {
-                        severity: 7,
                         btnClass: "btn-green",
                         countText: "success"
                     };
                     break;
                 case "running":
+                case "in progress":
                     resultStatusInfo = {
-                        severity: 8,
                         btnClass: "btn-dkgray",
                         countText: "running"
                     };
                     break;
                 case "pending":
                     resultStatusInfo = {
-                        severity: 100,
                         btnClass: "btn-ltgray",
                         countText: "pending"
                     };
                     break;
                 case "coalesced":
                     resultStatusInfo = {
-                        severity: 101,
                         btnClass: "btn-ltblue",
                         countText: "coalesced"
                     };
@@ -196,6 +187,10 @@ treeherder.provider('thEvents', function() {
             groupStateChanged: "group-state-changed-EVT",
 
             toggleRevisions: "toggle-revisions-EVT",
+
+            showRunnableJobs: "show-runnable-jobs-EVT",
+
+            deleteRunnableJobs: "delete-runnable-jobs-EVT",
 
             toggleAllRevisions: "toggle-all-revisions-EVT",
 
@@ -262,7 +257,7 @@ treeherder.provider('thAggregateIds', function() {
             getJobMapKey: getJobMapKey,
             getGroupMapKey: getGroupMapKey,
             escape: escape
-            };
+        };
     };
 });
 

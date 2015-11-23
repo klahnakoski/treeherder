@@ -32,7 +32,7 @@ to { opacity: 0; }
 
 #data-display { flex: auto; }
 
-#graph { width: 100%; height: 300px; margin-bottom: 30px; }
+#graph { width: 100%; height: 300px; margin-bottom: 30px; cursor: crosshair; }
 
 .graph-legend-table { table-layout:fixed; }
 
@@ -236,7 +236,7 @@ to { opacity: 0; }
 
 .compare-form .form-group .input-group-btn {
   flex: none;
-  width: 10px;
+  width: 80px;
 }
 
 .compare-table td, th {
@@ -261,6 +261,24 @@ to { opacity: 0; }
 
 .compare-table .subtest-header > th.test-title {
     text-align: left;
+}
+
+.compare-table tr:hover .detail-hint {
+    border-bottom: 1px dotted #777;
+}
+
+.compare-table .result-links span,
+.compare-table .result-links a {
+    color: transparent;
+    transition: color 150ms ease-in-out;
+}
+
+.compare-table tr:hover .result-links span {
+    color: #333;
+}
+
+.compare-table tr:hover .result-links a {
+    color: #23527c;
 }
 
 .compare-table .num-runs {
@@ -314,6 +332,20 @@ span.compare-regression {
   background-color: red;
 }
 
-.detail-hint {
-    border-bottom: 1px dotted #777;
+.alert-title {
+    font-size: 18px;
+    font-weight: bold;
+    margin-bottom: 4px;
+    color: #333;
 }
+
+.alert-title .icon-superscript {
+  vertical-align: super;
+  font-size: 0.625em;
+  margin-left: -0.2em;
+}
+
+.alert-metadata ul {
+    padding-top: 4px;
+}
+

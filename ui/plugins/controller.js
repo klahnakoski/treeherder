@@ -1,19 +1,21 @@
 "use strict";
 
 treeherder.controller('PluginCtrl', [
-    '$scope', '$rootScope', '$location', 'thUrl', 'ThJobClassificationModel',
+    '$scope', '$rootScope', '$location', '$http', 'thUrl', 'ThJobClassificationModel',
     'thClassificationTypes', 'ThJobModel', 'thEvents', 'dateFilter', 'thDateFormat',
     'numberFilter', 'ThBugJobMapModel', 'thResultStatus', 'thJobFilters',
     'ThResultSetModel', 'ThLog', '$q', 'thPinboard', 'ThJobArtifactModel',
     'thBuildApi', 'thNotify', 'ThJobLogUrlModel', 'ThModelErrors', 'thTabs',
     '$timeout', 'thJobSearchStr', 'thReftestStatus', 'ThResultSetStore',
+    'PhSeries', 'thServiceDomain', 'ThFailureLinesModel',
     function PluginCtrl(
-        $scope, $rootScope, $location, thUrl, ThJobClassificationModel,
+        $scope, $rootScope, $location, $http, thUrl, ThJobClassificationModel,
         thClassificationTypes, ThJobModel, thEvents, dateFilter, thDateFormat,
         numberFilter, ThBugJobMapModel, thResultStatus, thJobFilters,
         ThResultSetModel, ThLog, $q, thPinboard, ThJobArtifactModel,
         thBuildApi, thNotify, ThJobLogUrlModel, ThModelErrors, thTabs,
-        $timeout, thJobSearchStr, thReftestStatus, ThResultSetStore) {
+        $timeout, thJobSearchStr, thReftestStatus, ThResultSetStore, PhSeries,
+        thServiceDomain, ThFailureLinesModel) {
 
         var $log = new ThLog("PluginCtrl");
 
@@ -37,6 +39,51 @@ treeherder.controller('PluginCtrl', [
 
         $scope.filterByJobSearchStr = function(jobSearchStr) {
             thJobFilters.replaceFilter('searchStr', jobSearchStr || null);
+        };
+
+        // if the ``autoclassify`` param is set on the query sting, then
+        // show the ``autoClassification`` tab.  Otherwise, hide it.
+        // NOTE: This is a temporary param used during the evaluation/experimentation
+        // phase of this feature.
+        var showAutoClassifyTab = function() {
+            thTabs.tabs.autoClassification.enabled = ($location.search().autoclassify === true);
+        };
+        showAutoClassifyTab();
+        $rootScope.$on('$locationChangeSuccess', function() {
+            showAutoClassifyTab();
+        });
+
+        /**
+         * Set the tab options and selections based on the selected job.
+         * The default selected tab will be based on whether the job was a
+         * success or failure.
+         *
+         * Some tabs will be shown/hidden based on the job (such as Talos)
+         * and some based on query string params (such as autoClassification).
+         *
+         */
+        var initializeTabs = function(job) {
+            var successTab = "jobDetails";
+            var failTab = "failureSummary";
+
+            // show/hide Talos panel if this is a Talos job and default to
+            // Talos if the job was a ``success``
+            $scope.tabService.tabs.talos.enabled = (job.job_group_name.indexOf('Talos') !== -1);
+            if ($scope.tabService.tabs.talos.enabled) {
+                successTab = "talos";
+            }
+
+            // Error Classification/autoclassify special handling
+            if ($scope.tabService.tabs.autoClassification.enabled) {
+                failTab = "autoClassification";
+            }
+
+            // set the selected tab
+            if (thResultStatus(job) === 'success') {
+                $scope.tabService.selectedTab = successTab;
+            } else {
+                $scope.tabService.selectedTab = failTab;
+            }
         };
 
         // this promise will void all the ajax requests
@@ -76,11 +123,15 @@ treeherder.controller('PluginCtrl', [
                     job_id,
                     {timeout: selectJobPromise});
 
+                var jobIdPromise = PhSeries.getSeriesByJobId(
+                    $scope.repoName, job_id);
+
                 return $q.all([
                     jobDetailPromise,
                     buildapiArtifactPromise,
                     jobInfoArtifactPromise,
-                    jobLogUrlPromise
+                    jobLogUrlPromise,
+                    jobIdPromise
                 ]).then(function(results){
                     //the first result comes from the job detail promise
                     $scope.job = results[0];
@@ -88,25 +139,10 @@ treeherder.controller('PluginCtrl', [
                     $scope.eta_abs = Math.abs($scope.job.get_current_eta());
                     $scope.typical_eta = $scope.job.get_typical_eta();
                     $scope.jobRevision = ThResultSetStore.getSelectedJob($scope.repoName).job.revision;
+                    $scope.jobIds = results[4];
 
-                    // we handle which tab gets presented in the job details panel
-                    // and a special set of rules for talos
-                    if ($scope.job.job_group_name.indexOf('Talos') !== -1) {
-                        $scope.tabService.tabs.talos.enabled = true;
-                        if (thResultStatus($scope.job) === 'success') {
-                            $scope.tabService.selectedTab = 'talos';
-                        } else {
-                            $scope.tabService.selectedTab = 'failureSummary';
-                        }
-                    } else {
-                        // tab presentation for any other (non-talos) job
-                        $scope.tabService.tabs.talos.enabled = false;
-                        if (thResultStatus($scope.job) === 'success') {
-                            $scope.tabService.selectedTab = 'jobDetails';
-                        } else {
-                            $scope.tabService.selectedTab = 'failureSummary';
-                        }
-                    }
+                    // set the tab options and selections based on the selected job
+                    initializeTabs($scope.job);
 
                     // the second result come from the buildapi artifact promise
                     var buildapi_artifact = results[1];
@@ -123,7 +159,6 @@ treeherder.controller('PluginCtrl', [
                     $scope.jobSearchSignature = $scope.job.signature;
                     $scope.jobSearchStrHref = getJobSearchStrHref($scope.jobSearchStr);
                     $scope.jobSearchSignatureHref = getJobSearchStrHref($scope.job.signature);
-
                     // the third result comes from the job info artifact promise
                     var jobInfoArtifact = results[2];
                     if (jobInfoArtifact.length > 0) {
@@ -131,16 +166,57 @@ treeherder.controller('PluginCtrl', [
                         // we merge them here to make displaying them in the UI
                         // easier.
                         $scope.job_details = jobInfoArtifact.reduce(function(result, artifact) {
-                          if (artifact.blob && Array.isArray(artifact.blob.job_details)) {
-                              result = result.concat(artifact.blob.job_details);
-                          }
-                          if ($scope.artifacts.buildapi) {
-                              $scope.artifacts.buildapi.blob.title = "Buildername";
-                              $scope.artifacts.buildapi.blob.value = $scope.artifacts.buildapi.blob.buildername;
-                              result = result.concat($scope.artifacts.buildapi.blob);
-                          }
-                          return result;
+                            if (artifact.blob && Array.isArray(artifact.blob.job_details)) {
+                                result = result.concat(artifact.blob.job_details);
+                            }
+                            if ($scope.artifacts.buildapi) {
+                                $scope.artifacts.buildapi.blob.title = "Buildername";
+                                $scope.artifacts.buildapi.blob.value = $scope.artifacts.buildapi.blob.buildername;
+                                result = result.concat($scope.artifacts.buildapi.blob);
+                            }
+                            return result;
                         }, []);
+                        if ($scope.jobIds !== null) {
+                            var signatureList = _.keys($scope.jobIds);
+                            var seriesList = [];
+                            $scope.perfJobDetail = [];
+                            $q.all(_.chunk(signatureList, 20).map(function(signatureChunk) {
+                                var url = '/performance/signatures/?signature=' + signatureChunk.pop();
+                                signatureChunk.forEach(function(signature) {
+                                    url = url + '&signature=' + signature;
+                                });
+                                return $http.get(thUrl.getProjectUrl(url, $scope.repoName)).then(
+                                    function(response) {
+                                        _.map(response.data, function(series, key) {
+                                            series['signature'] = key;
+                                            seriesList.push(series);
+                                        });
+                                    });
+                            })).then(function(){
+                                var allSubtestSignatures = _.flatten(_.map(seriesList, function(series) {
+                                    return series.subtest_signatures ? series.subtest_signatures : [];
+                                }));
+                                _.forEach(seriesList, function(series) {
+                                    if (!series.subtest_signatures) {
+                                        if (_.contains(allSubtestSignatures, series.signature)) {
+                                            return;
+                                        }
+                                    }
+                                    var detail = {};
+                                    detail['url'] = thServiceDomain + '/perf.html#/graphs?series=[' +
+                                        $scope.repoName+ ',' + series.signature + ',1]&selected=[' +
+                                        $scope.repoName + ',' +  series.signature + ',' +
+                                        $scope.job['result_set_id'] + ',' + $scope.job['id'] + ']';
+                                    detail['value'] = $scope.jobIds[series.signature][0].value;
+                                    detail['title'] = series.suite;
+                                    if (series.hasOwnProperty('test') && series.test.toLowerCase() !== series.suite) {
+                                        detail['title'] += '_' + series.test.toLowerCase();
+                                    }
+
+                                    $scope.perfJobDetail.push(detail);
+                                });
+                            });
+                        }
                     }
 
                     // the fourth result comes from the jobLogUrl artifact
@@ -197,43 +273,43 @@ treeherder.controller('PluginCtrl', [
         };
 
         var updateVisibleFields = function() {
-                var undef = "",
-                    duration = "";
-                // fields that will show in the job detail panel
-                $scope.visibleFields = {
-                    "Build": $scope.job.build_architecture + " " +
-                             $scope.job.build_platform  + " " +
-                             $scope.job.build_os || undef,
-                    "Job name": $scope.job.job_type_name || undef
-                };
+            var undef = "",
+                duration = "";
+            // fields that will show in the job detail panel
+            $scope.visibleFields = {
+                "Build": $scope.job.build_architecture + " " +
+                         $scope.job.build_platform  + " " +
+                         $scope.job.build_os || undef,
+                "Job name": $scope.job.job_type_name || undef
+            };
 
-                // time fields to show in detail panel, but that should be grouped together
-                $scope.visibleTimeFields = {
-                    requestTime: dateFilter($scope.job.submit_timestamp*1000,
-                                            thDateFormat)
-                };
+            // time fields to show in detail panel, but that should be grouped together
+            $scope.visibleTimeFields = {
+                requestTime: dateFilter($scope.job.submit_timestamp*1000,
+                                        thDateFormat)
+            };
 
-                /*
-                    display appropriate times and duration
+            /*
+                display appropriate times and duration
 
-                    If start time is 0, then duration should be from requesttime to now
-                    If we have starttime and no endtime, then duration should be starttime to now
-                    If we have both starttime and endtime, then duration will be between those two
-                */
-                var endtime = $scope.job.end_timestamp || Date.now()/1000;
-                var starttime = $scope.job.start_timestamp || $scope.job.submit_timestamp;
-                duration = numberFilter((endtime-starttime)/60, 0) + " minute(s)";
+                If start time is 0, then duration should be from requesttime to now
+                If we have starttime and no endtime, then duration should be starttime to now
+                If we have both starttime and endtime, then duration will be between those two
+            */
+            var endtime = $scope.job.end_timestamp || Date.now()/1000;
+            var starttime = $scope.job.start_timestamp || $scope.job.submit_timestamp;
+            duration = numberFilter((endtime-starttime)/60, 0) + " minute(s)";
 
-                $scope.visibleTimeFields.duration = duration;
+            $scope.visibleTimeFields.duration = duration;
 
-                if ($scope.job.start_timestamp) {
-                    $scope.visibleTimeFields.startTime = dateFilter(
-                        $scope.job.start_timestamp*1000, thDateFormat);
-                }
-                if ($scope.job.end_timestamp) {
-                    $scope.visibleTimeFields.endTime = dateFilter(
-                        $scope.job.end_timestamp*1000, thDateFormat);
-                }
+            if ($scope.job.start_timestamp) {
+                $scope.visibleTimeFields.startTime = dateFilter(
+                    $scope.job.start_timestamp*1000, thDateFormat);
+            }
+            if ($scope.job.end_timestamp) {
+                $scope.visibleTimeFields.endTime = dateFilter(
+                    $scope.job.end_timestamp*1000, thDateFormat);
+            }
         };
 
         $scope.getCountPinnedJobs = function() {
@@ -319,10 +395,10 @@ treeherder.controller('PluginCtrl', [
                 // See note in retrigger logic.
                 ThJobModel.cancel($scope.repoName, $scope.job.id).then(function() {
                   // XXX: Remove this after 1134929 is resolved.
-                  var requestId = getBuildbotRequestId();
-                  if (requestId) {
-                    return thBuildApi.cancelJob($scope.repoName, requestId);
-                  }
+                    var requestId = getBuildbotRequestId();
+                    if (requestId) {
+                        return thBuildApi.cancelJob($scope.repoName, requestId);
+                    }
                 }).catch(function(e) {
                     thNotify.send(
                         ThModelErrors.format(e, "Unable to cancel job"),

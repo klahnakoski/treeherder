@@ -500,10 +500,10 @@ class ReferenceDataSignatures(models.Model):
     name = models.CharField(max_length=255L)
     signature = models.CharField(max_length=50L, db_index=True)
     build_os_name = models.CharField(max_length=25L, db_index=True)
-    build_platform = models.CharField(max_length=25L, db_index=True)
+    build_platform = models.CharField(max_length=100L, db_index=True)
     build_architecture = models.CharField(max_length=25L, db_index=True)
     machine_os_name = models.CharField(max_length=25L, db_index=True)
-    machine_platform = models.CharField(max_length=25L, db_index=True)
+    machine_platform = models.CharField(max_length=100L, db_index=True)
     machine_architecture = models.CharField(max_length=25L, db_index=True)
     job_group_name = models.CharField(max_length=100L, blank=True, db_index=True)
     job_group_symbol = models.CharField(max_length=25L, blank=True, db_index=True)
@@ -671,3 +671,27 @@ class FailureMatch(models.Model):
         unique_together = (
             ('failure_line', 'classified_failure', 'matcher')
         )
+
+
+@python_2_unicode_compatible
+class RunnableJob(models.Model):
+    id = models.AutoField(primary_key=True)
+    build_platform = models.ForeignKey(BuildPlatform)
+    machine_platform = models.ForeignKey(MachinePlatform)
+    job_type = models.ForeignKey(JobType)
+    option_collection_hash = models.CharField(max_length=64L)
+    ref_data_name = models.CharField(max_length=255L)
+    build_system_type = models.CharField(max_length=25L)
+    repository = models.ForeignKey(Repository)
+    last_touched = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'runnable_job'
+        unique_together = (
+            ('ref_data_name', 'build_system_type')
+        )
+
+    def __str__(self):
+        return "{0} {1} {2}".format(self.id,
+                                    self.ref_data_name,
+                                    self.build_system_type)

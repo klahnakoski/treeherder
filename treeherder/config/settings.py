@@ -48,6 +48,10 @@ STATIC_URL = "/static/"
 MEDIA_ROOT = path("media")
 MEDIA_URL = "/media/"
 
+# Default minimum regression threshold for perfherder is 1% (otherwise
+# e.g. the build size tests will alert on every commit)
+PERFHERDER_REGRESSION_THRESHOLD = 2
+
 # Create hashed+gzipped versions of assets during collectstatic,
 # which will then be served by WhiteNoise with a suitable max-age.
 STATICFILES_STORAGE = 'whitenoise.django.GzipManifestStaticFilesStorage'
@@ -184,6 +188,7 @@ CELERY_QUEUES = (
     Queue('buildapi_pending', Exchange('default'), routing_key='buildapi_pending'),
     Queue('buildapi_running', Exchange('default'), routing_key='buildapi_running'),
     Queue('buildapi_4hr', Exchange('default'), routing_key='buildapi_4hr'),
+    Queue('fetch_allthethings', Exchange('default'), routing_key='fetch_allthethings'),
     Queue('cycle_data', Exchange('default'), routing_key='cycle_data'),
     Queue('calculate_eta', Exchange('default'), routing_key='calculate_eta'),
     Queue('fetch_bugs', Exchange('default'), routing_key='fetch_bugs'),
@@ -230,6 +235,14 @@ CELERYBEAT_SCHEDULE = {
         'relative': True,
         'options': {
             "queue": "buildapi_4hr"
+        }
+    },
+    'fetch-allthethings-every-day': {
+        'task': 'fetch-allthethings',
+        'schedule': timedelta(days=1),
+        'relative': True,
+        'options': {
+            'queue': "fetch_allthethings"
         }
     },
     'cycle-data-every-day': {
@@ -291,6 +304,7 @@ SITE_URL = os.environ.get("SITE_URL", "http://local.treeherder.mozilla.org")
 BUILDAPI_PENDING_URL = "https://secure.pub.build.mozilla.org/builddata/buildjson/builds-pending.js"
 BUILDAPI_RUNNING_URL = "https://secure.pub.build.mozilla.org/builddata/buildjson/builds-running.js"
 BUILDAPI_BUILDS4H_URL = "https://secure.pub.build.mozilla.org/builddata/buildjson/builds-4hr.js.gz"
+ALLTHETHINGS_URL = "https://secure.pub.build.mozilla.org/builddata/reports/allthethings.json"
 
 # the max size of a posted request to treeherder client during Buildbot
 # data job ingestion.

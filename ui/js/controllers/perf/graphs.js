@@ -45,7 +45,6 @@ perf.controller('GraphsCtrl', [
         function deselectDataPoint() {
             $timeout(function() {
                 $scope.selectedDataPoint = null;
-                $scope.plot.unhighlight();
                 hideTooltip();
                 updateDocument();
             });
@@ -78,8 +77,7 @@ perf.controller('GraphsCtrl', [
                         return fs.thSeries.projectName == dataPoint.projectName &&
                             fs.thSeries.signature == dataPoint.signature;
                     }),
-                   pointIndex: index ? index : phSeries.flotSeries.resultSetData.indexOf(
-                        dataPoint.resultSetId)
+                    pointIndex: index ? index : phSeries.flotSeries.resultSetData.indexOf(dataPoint.resultSetId)
                 };
                 var prevResultSetId = _.findLast(phSeries.flotSeries.resultSetData,
                                              function(resultSetId) {
@@ -217,6 +215,35 @@ perf.controller('GraphsCtrl', [
             }
         }
 
+        function plotUnselected() {
+            $scope.zoom = {};
+            $scope.selectedDataPoint = null;
+            hideTooltip();
+            updateDocument();
+            plotGraph();
+        }
+
+        function plotSelected(event, ranges) {
+            deselectDataPoint();
+            hideTooltip();
+
+            $.each($scope.plot.getXAxes(), function(_, axis) {
+                var opts = axis.options;
+                opts.min = ranges.xaxis.from;
+                opts.max = ranges.xaxis.to;
+            });
+            $.each($scope.plot.getYAxes(), function(_, axis) {
+                var opts = axis.options;
+                opts.min = ranges.yaxis.from;
+                opts.max = ranges.yaxis.to;
+            });
+            $scope.zoom = {'x': [ranges.xaxis.from, ranges.xaxis.to], 'y': [ranges.yaxis.from, ranges.yaxis.to]};
+
+            $scope.plot.setupGrid();
+            $scope.plot.draw();
+            updateDocument();
+        }
+
         function plotOverviewGraph() {
             // We want to show lines for series in the overview plot, if they are visible
             $scope.seriesList.forEach(function(series) {
@@ -224,60 +251,37 @@ perf.controller('GraphsCtrl', [
                 series.flotSeries.lines.show = series.visible;
             });
 
-            $scope.overviewPlot = $.plot($("#overview-plot"),
-                                         $scope.seriesList.map(
-                                             function(series) {
-                                                 return series.flotSeries; }),
-                                         {
-                                             xaxis: { mode: 'time' },
-                                             selection: { mode: 'xy', color: '#97c6e5' },
-                                             series: { shadowSize: 0 },
-                                             lines: { show: true },
-                                             points: { show: false },
-                                             legend: { show: false },
-                                             grid: {
-                                                 color: '#cdd6df',
-                                                 borderWidth: 2,
-                                                 backgroundColor: '#fff',
-                                                 hoverable: true,
-                                                 clickable: true,
-                                                 autoHighlight: false
-                                             }
-                                         });
+            $scope.overviewPlot = $.plot(
+                $("#overview-plot"),
+                $scope.seriesList.map(function(series) {
+                    return series.flotSeries;
+                }),
+                {
+                    xaxis: { mode: 'time' },
+                    selection: { mode: 'xy', color: '#97c6e5' },
+                    series: { shadowSize: 0 },
+                    lines: { show: true },
+                    points: { show: false },
+                    legend: { show: false },
+                    grid: {
+                        color: '#cdd6df',
+                        borderWidth: 2,
+                        backgroundColor: '#fff',
+                        hoverable: true,
+                        clickable: true,
+                        autoHighlight: false
+                    }
+                }
+            );
             // Reset $scope.seriesList with lines.show = false
             $scope.seriesList.forEach(function(series) {
                 series.flotSeries.points.show = series.visible;
                 series.flotSeries.lines.show = false;
             });
 
-            $("#overview-plot").bind("plotunselected", function() {
-                $scope.zoom = {};
-                $scope.selectedDataPoint = null;
-                hideTooltip();
-                updateDocument();
-                plotGraph();
-            });
+            $("#overview-plot").bind("plotunselected", plotUnselected);
 
-            $("#overview-plot").bind("plotselected", function (event, ranges) {
-                deselectDataPoint();
-                hideTooltip();
-
-                $.each($scope.plot.getXAxes(), function(_, axis) {
-                    var opts = axis.options;
-                    opts.min = ranges.xaxis.from;
-                    opts.max = ranges.xaxis.to;
-                });
-                $.each($scope.plot.getYAxes(), function(_, axis) {
-                    var opts = axis.options;
-                    opts.min = ranges.yaxis.from;
-                    opts.max = ranges.yaxis.to;
-                });
-                $scope.zoom = {'x': [ranges.xaxis.from, ranges.xaxis.to], 'y': [ranges.yaxis.from, ranges.yaxis.to]};
-
-                $scope.plot.setupGrid();
-                $scope.plot.draw();
-                updateDocument();
-            });
+            $("#overview-plot").bind("plotselected", plotSelected);
         }
 
         function zoomGraph() {
@@ -337,33 +341,39 @@ perf.controller('GraphsCtrl', [
                                             var resultSetId = resultSets[0].id;
                                             var j = series.flotSeries.resultSetData.indexOf(resultSetId);
                                             series.highlightedPoints.push(j);
+                                        }, function(reason) {
+                                            /* ignore cases where no result set exists
+                                               for revision */
                                         });
                             }
                             return null;
                         }));
                 }
             });
-
             $q.all(highlightPromises).then(function() {
                 // plot the actual graph
-                $scope.plot = $.plot($("#graph"),
-                                     $scope.seriesList.map(
-                                         function(series) { return series.flotSeries; }),
-                                     {
-                                         xaxis: { mode: 'time' },
-                                         series: { shadowSize: 0 },
-                                         lines: { show: false },
-                                         points: { show: true },
-                                         legend: { show: false },
-                                         grid: {
-                                             color: '#cdd6df',
-                                             borderWidth: 2,
-                                             backgroundColor: '#fff',
-                                             hoverable: true,
-                                             clickable: true,
-                                             autoHighlight: false
-                                         }
-                                     });
+                $scope.plot = $.plot(
+                    $("#graph"),
+                    $scope.seriesList.map(function(series) {
+                        return series.flotSeries;
+                    }),
+                    {
+                        xaxis: { mode: 'time' },
+                        series: { shadowSize: 0 },
+                        selection: { mode: 'xy', color: '#97c6e5'},
+                        lines: { show: false },
+                        points: { show: true },
+                        legend: { show: false },
+                        grid: {
+                            color: '#cdd6df',
+                            borderWidth: 2,
+                            backgroundColor: '#fff',
+                            hoverable: true,
+                            clickable: true,
+                            autoHighlight: false
+                        }
+                    }
+                );
 
                 updateSelectedItem(null);
                 highlightDataPoints();
@@ -390,7 +400,7 @@ perf.controller('GraphsCtrl', [
                     if ($scope.selectedDataPoint)
                         return;
 
-                    $('#graph').css({ cursor: item ? 'pointer' : 'default' });
+                    $('#graph').css({ cursor: item ? 'pointer' : '' });
 
                     if (item && item.series.thSeries) {
                         if (item.seriesIndex != $scope.prevSeriesIndex ||
@@ -420,6 +430,12 @@ perf.controller('GraphsCtrl', [
                     }
                     updateDocument();
                     highlightDataPoints();
+                });
+
+                $('#graph').bind("plotselected", function(event, ranges) {
+                    $scope.plot.clearSelection();
+                    plotSelected(event, ranges);
+                    zoomGraph();
                 });
             });
         }
@@ -521,6 +537,12 @@ perf.controller('GraphsCtrl', [
                                      'signatures/?signature=' +
                                      partialSeries.signature).then(function(response) {
                                          var data = response.data;
+
+                                         if (!data[partialSeries.signature]) {
+                                             return $q.reject("Signature `" + partialSeries.signature +
+                                                     "` not found for " + partialSeries.project);
+                                         }
+
                                          if (!propsHash[partialSeries.project]) {
                                              propsHash[partialSeries.project] = {};
                                          }
@@ -548,7 +570,16 @@ perf.controller('GraphsCtrl', [
                             showTooltip($scope.selectedDataPoint);
                         }
                     });
-                });
+                },
+                         function(error) {
+                             if (error.statusText) {
+                                 error = "HTTP Error: " + error.statusText;
+                             }
+                             // we could probably do better than print this
+                             // rather useless error, but at least this gives
+                             // a hint on what the problem is
+                             alert("Error loading performance data\n\n" + error);
+                         });
         };
 
         $scope.removeSeries = function(projectName, signature) {
@@ -670,10 +701,10 @@ perf.controller('GraphsCtrl', [
                     var tooltipString = decodeURIComponent($stateParams.selected).replace(/[\[\]"]/g, '');
                     var tooltipArray = tooltipString.split(",");
                     var tooltip = {
-                            projectName: tooltipArray[0],
-                            signature: tooltipArray[1],
-                            resultSetId: parseInt(tooltipArray[2]),
-                            jobId: (tooltipArray[3] !== undefined) ? parseInt(tooltipArray[3]) : null
+                        projectName: tooltipArray[0],
+                        signature: tooltipArray[1],
+                        resultSetId: parseInt(tooltipArray[2]),
+                        jobId: (tooltipArray[3] !== undefined) ? parseInt(tooltipArray[3]) : null
                     };
                     $scope.selectedDataPoint = (tooltipString) ? tooltip : null;
                 }
@@ -839,10 +870,10 @@ perf.controller('TestChooserCtrl', function($scope, $modalInstance, $http,
                 });
             }
         ).then(function() {
-                // resolve the testsToAdd's length after every thing was done
-                // so we don't need timeout here
-                loadingExtraDataPromise.resolve($scope.testsToAdd.length);
-            });
+            // resolve the testsToAdd's length after every thing was done
+            // so we don't need timeout here
+            loadingExtraDataPromise.resolve($scope.testsToAdd.length);
+        });
     };
 
     var addRelatedBranches = function(relatedSeries) {

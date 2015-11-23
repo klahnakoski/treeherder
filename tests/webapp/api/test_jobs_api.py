@@ -60,11 +60,6 @@ def test_job_list(webapp, eleven_jobs_stored, jm):
     for job in jobs:
         assert set(job.keys()) == set(exp_keys)
 
-    # The jobs should be returned in order of descending order
-    # of their resultset's push_timestamp, so in this case the
-    # first job should have id of 10.
-    assert jobs[0]['id'] == 10
-
 
 def test_job_list_bad_project(webapp, eleven_jobs_stored, jm):
     """
@@ -236,8 +231,36 @@ def test_job_error_lines(webapp, eleven_jobs_stored, jm, failure_lines, classifi
     matches = failures[0]["matches"]
     assert isinstance(matches, list)
 
-    exp_matches_keys = ["id", "matcher", "score", "is_best"]
+    exp_matches_keys = ["id", "matcher", "score", "is_best", "classified_failure"]
 
     assert set(matches[0].keys()) == set(exp_matches_keys)
 
+    classified = matches[0]["classified_failure"]
+    assert isinstance(classified, dict)
+
+    exp_classified_keys = ["id", "bug_number"]
+
+    assert set(classified.keys()) == set(exp_classified_keys)
+
     jm.disconnect()
+
+
+def test_list_similar_jobs(webapp, eleven_jobs_stored, jm):
+    """
+    test retrieving similar jobs
+    """
+    job = jm.get_job(1)[0]
+
+    resp = webapp.get(
+        reverse("jobs-similar-jobs",
+                kwargs={"project": jm.project, "pk": job["id"]})
+    )
+    assert resp.status_int == 200
+
+    similar_jobs = resp.json
+
+    assert 'results' in similar_jobs
+
+    assert isinstance(similar_jobs['results'], list)
+
+    assert len(similar_jobs['results']) == 3

@@ -5,10 +5,12 @@ treeherder.factory('ThResultSetStore', [
     'ThResultSetModel', 'ThJobModel', 'thEvents', 'thResultStatusObject',
     'thAggregateIds', 'ThLog', 'thNotify', 'thJobFilters', 'thOptionOrder',
     'ThRepositoryModel', '$timeout', 'ThJobTypeModel', 'ThJobGroupModel',
+    'ThRunnableJobModel',
     function(
         $rootScope, $q, $location, $interval, thPlatformOrder, ThResultSetModel,
         ThJobModel, thEvents, thResultStatusObject, thAggregateIds, ThLog, thNotify,
-        thJobFilters, thOptionOrder, ThRepositoryModel, $timeout, ThJobTypeModel, ThJobGroupModel) {
+        thJobFilters, thOptionOrder, ThRepositoryModel, $timeout, ThJobTypeModel,
+        ThJobGroupModel, ThRunnableJobModel) {
 
         var $log = new ThLog("ThResultSetStore");
 
@@ -136,20 +138,20 @@ treeherder.factory('ThResultSetStore', [
                 }
             });
         };
-        var registerJobsPoller = function(){
+        var registerJobsPoller = function() {
             $interval(pollJobs, jobPollInterval);
         };
 
-        var mapResultSetJobs = function(repoName, jobList){
-            if(jobList.length > 0){
+        var mapResultSetJobs = function(repoName, jobList) {
+            if(jobList.length > 0) {
                 // jobList contains jobs belonging to the same resultset,
                 // so we can pick the result_set_id from the first job
                 var resultSetId = jobList[0].result_set_id;
                 var resultSet = _.findWhere(
                     repositories[repoName].resultSets, {id: resultSetId}
                 );
-                if(_.isUndefined(resultSet)){ return $q.defer().resolve(); }
-                if(_.has(resultSet, 'jobList')){
+                if (_.isUndefined(resultSet)){ return $q.defer().resolve(); }
+                if (_.has(resultSet, 'jobList')) {
                     // get the new job ids
                     var jobIds = _.pluck(jobList, 'id');
                     // remove the elements that need to be updated
@@ -157,7 +159,7 @@ treeherder.factory('ThResultSetStore', [
                         return _.indexOf(jobIds, job.id) === -1;
                     });
                     resultSet.jobList = resultSet.jobList.concat(jobList);
-                }else{
+                } else {
                     resultSet.jobList = jobList;
                 }
                 var sortAndGroupJobs = _.compose(
@@ -173,7 +175,7 @@ treeherder.factory('ThResultSetStore', [
                         );
                         $rootScope.$emit(thEvents.applyNewJobs, resultSetId);
                     });
-            }else{
+            } else {
                 return $q.defer().resolve();
             }
         };
@@ -270,6 +272,28 @@ treeherder.factory('ThResultSetStore', [
                 key += option;
             }
             return key;
+        };
+
+        var addRunnableJobs = function(repoName, resultSet) {
+            return ThRunnableJobModel.get_list(repoName).then(function(jobList) {
+                var id = resultSet.id;
+                _.each(jobList, function(job) {
+                    job.result_set_id = id;
+                    job.id = thAggregateIds.escape(job.result_set_id + job.ref_data_name);
+                });
+
+                if (jobList.length === 0) {
+                    thNotify.send("No new jobs available");
+                };
+
+                mapResultSetJobs(repoName, jobList);
+            });
+        };
+
+        var deleteRunnableJobs = function(repoName, resultSet) {
+            repositories[repoName].rsMap[resultSet.id].selected_runnable_jobs = [];
+            resultSet.isRunnableVisible = false;
+            $rootScope.$emit(thEvents.globalFilterChanged);
         };
 
         /******
@@ -786,6 +810,29 @@ treeherder.factory('ThResultSetStore', [
             return repositories[repoName].rsMap[resultsetId].rs_obj;
         };
 
+        var getSelectedRunnableJobs = function(repoName, resultsetId) {
+            if (!repositories[repoName].rsMap[resultsetId].selected_runnable_jobs) {
+                repositories[repoName].rsMap[resultsetId].selected_runnable_jobs = [];
+            }
+            return repositories[repoName].rsMap[resultsetId].selected_runnable_jobs;
+        };
+
+        var toggleSelectedRunnableJob = function(repoName, resultsetId, buildername) {
+            var selectedRunnableJobs = getSelectedRunnableJobs(repoName, resultsetId);
+            var jobIndex = selectedRunnableJobs.indexOf(buildername);
+
+            if (jobIndex === -1) {
+                selectedRunnableJobs.push(buildername);
+            } else {
+                selectedRunnableJobs.splice(jobIndex, 1);
+            }
+        };
+
+        var isRunnableJobSelected = function(repoName, resultsetId, buildername) {
+            var selectedRunnableJobs = getSelectedRunnableJobs(repoName, resultsetId);
+            return _.includes(selectedRunnableJobs, buildername);
+        };
+
         var getJobMap = function(repoName){
             // this is a "watchable" for jobs
             return repositories[repoName].jobMap;
@@ -813,7 +860,6 @@ treeherder.factory('ThResultSetStore', [
             var loadResultsets = ThResultSetModel.getResultSets(repoName,
                                                                 repositories[repoName].rsMapOldestTimestamp,
                                                                 count,
-                                                                undefined,
                                                                 true,
                                                                 keepFilters).
                 then(function(data) {
@@ -867,10 +913,60 @@ treeherder.factory('ThResultSetStore', [
                                 return mapResultSetJobs(repoName, jobs);
                             });
                         });
-                    $q.all(mapResultSetJobsPromiseList).then(function(){
+                    $q.all(mapResultSetJobsPromiseList).then(function() {
+                        setSelectedJobFromQueryString(repoName);
                         registerJobsPoller();
                     });
                 });
+        };
+
+        /**
+         * If the URL has a query string param of ``selectedJob`` then select
+         * that job on load.
+         *
+         * If that job isn't in any of the loaded resultsets, then throw
+         * an error and provide a link to load it with the right resultset.
+         */
+        var setSelectedJobFromQueryString = function(repoName) {
+            var selectedJobId = parseInt($location.search().selectedJob);
+            var selectedJobEl, key;
+
+            if (selectedJobId) {
+                key = thAggregateIds.getJobMapKey({id: selectedJobId});
+                selectedJobEl = repositories[repoName].jobMap[key];
+
+                // select the job in question
+                if (selectedJobEl) {
+                    $timeout(function() {
+                        $rootScope.$emit(thEvents.selectJob, selectedJobEl.job_obj);
+                    }, 200);
+
+                } else {
+                    // If the ``selectedJob`` was not mapped, then we need to notify
+                    // the user it's not in the range of the current result set list.
+                    ThJobModel.get(repoName, selectedJobId).then(function(job) {
+                        ThResultSetModel.getResultSet(repoName, job.result_set_id).then(function(resultset) {
+                            var url = $rootScope.urlBasePath +
+                                      "?repo=" + repoName +
+                                      "&revision=" + resultset.data.revision +
+                                      "&selectedJob=" + selectedJobId;
+
+                            // the job exists, but isn't in any loaded resultset.
+                            // provide a message and link to load the right resultset
+                            thNotify.send("Selected job id: " + selectedJobId + " not within current result set range.",
+                                          "danger",
+                                          true,
+                                          "Load result set",
+                                          url);
+
+                        });
+                    }, function() {
+                        // the job wasn't found in the db.  Either never existed,
+                        // or was expired and deleted.
+                        thNotify.send("Unable to find job with id " + selectedJobId, "danger", true);
+                    });
+                }
+            }
         };
 
         var getLastModifiedJob = function(jobList){
@@ -1040,6 +1136,7 @@ treeherder.factory('ThResultSetStore', [
 
             addRepository: addRepository,
             aggregateJobPlatform: aggregateJobPlatform,
+            deleteRunnableJobs: deleteRunnableJobs,
             fetchJobs: fetchJobs,
             fetchResultSets: fetchResultSets,
             getAllShownJobs: getAllShownJobs,
@@ -1047,6 +1144,10 @@ treeherder.factory('ThResultSetStore', [
             getGroupMap: getGroupMap,
             getLoadingStatus: getLoadingStatus,
             getPlatformKey: getPlatformKey,
+            addRunnableJobs: addRunnableJobs,
+            isRunnableJobSelected: isRunnableJobSelected,
+            getSelectedRunnableJobs: getSelectedRunnableJobs,
+            toggleSelectedRunnableJob: toggleSelectedRunnableJob,
             getResultSet: getResultSet,
             getResultSetsArray: getResultSetsArray,
             getResultSetsMap: getResultSetsMap,

@@ -59,13 +59,14 @@ perf.controller('CompareChooserCtrl', [
             };
 
             $scope.runCompare = function() {
-                ThResultSetModel.getResultSetsFromRevision(
-                    $scope.originalProject.name, $scope.originalRevision).then(
-                        function(resultSets) {
-                            $scope.originalRevisionError = undefined;
-                        }, function(error) {
-                            $scope.originalRevisionError = error;
-                        });
+                ThResultSetModel.getResultSetsFromRevision($scope.originalProject.name, $scope.originalRevision).then(
+                    function(resultSets) {
+                        $scope.originalRevisionError = undefined;
+                    },
+                    function(error) {
+                        $scope.originalRevisionError = error;
+                    }
+                );
 
                 ThResultSetModel.getResultSetsFromRevision($scope.newProject.name, $scope.newRevision).then(
                     function (resultSets) {
@@ -78,7 +79,8 @@ perf.controller('CompareChooserCtrl', [
                                 newRevision: $scope.newRevision
                             });
                         }
-                    }, function (error) {
+                    },
+                    function (error) {
                         $scope.newRevisionError = error;
                     }
                 );
@@ -90,12 +92,13 @@ perf.controller('CompareResultsCtrl', [
     '$state', '$stateParams', '$scope', '$rootScope', '$location',
     'thServiceDomain', 'ThOptionCollectionModel', 'ThRepositoryModel',
     'ThResultSetModel', '$http', '$q', '$timeout', 'PhSeries', 'math',
-    'isReverseTest', 'PhCompare',
+    'phTimeRanges', 'PhCompare',
     function CompareResultsCtrl($state, $stateParams, $scope,
                                 $rootScope, $location,
                                 thServiceDomain, ThOptionCollectionModel,
                                 ThRepositoryModel, ThResultSetModel, $http,
-                                $q, $timeout, PhSeries, math, isReverseTest,
+                                $q, $timeout, PhSeries, math,
+                                phTimeRanges,
                                 PhCompare) {
         function displayComparison() {
             $scope.testList = [];
@@ -175,18 +178,34 @@ perf.controller('CompareResultsCtrl', [
                         return;
                     }
 
-                    var detailsLink = 'perf.html#/comparesubtest?';
-                    detailsLink += _.map(_.pairs({
-                        originalProject: $scope.originalProject.name,
-                        originalRevision: $scope.originalRevision,
-                        newProject: $scope.newProject.name,
-                        newRevision: $scope.newRevision,
-                        originalSignature: oldSig,
-                        newSignature: newSig
-                    }), function(kv) { return kv[0]+"="+kv[1]; }).join("&");
+                    cmap.links = [];
+
                     if (testName.indexOf("summary") > 0) {
-                        cmap.detailsLink = detailsLink;
+                        var detailsLink = 'perf.html#/comparesubtest?';
+                        detailsLink += _.map(_.pairs({
+                            originalProject: $scope.originalProject.name,
+                            originalRevision: $scope.originalRevision,
+                            newProject: $scope.newProject.name,
+                            newRevision: $scope.newRevision,
+                            originalSignature: oldSig,
+                            newSignature: newSig
+                        }), function(kv) { return kv[0]+"="+kv[1]; }).join("&");
+                        cmap.links.push({
+                            title: 'subtests',
+                            href: detailsLink
+                        });
                     }
+
+                    var graphsLink = PhCompare.getGraphsLink(
+                        $scope.originalProject, $scope.newProject, oldSig,
+                        $scope.originalResultSet, $scope.newResultSet);
+                    if (graphsLink) {
+                        cmap.links.push({
+                            title: 'graph',
+                            href: graphsLink
+                        });
+                    }
+
                     cmap.name = platform;
                     if (Object.keys($scope.compareResults).indexOf(testName) < 0)
                         $scope.compareResults[testName] = [];
@@ -211,7 +230,8 @@ perf.controller('CompareResultsCtrl', [
                     } else {
                         $scope.newResultSet = resultSet;
                     }
-                }, function(error) {
+                },
+                function(error) {
                     $scope.errors.push(error);
                 });
         }
@@ -284,13 +304,13 @@ perf.controller('CompareSubtestResultsCtrl', [
     '$state', '$stateParams', '$scope', '$rootScope', '$location',
     'thServiceDomain', 'ThOptionCollectionModel', 'ThRepositoryModel',
     'ThResultSetModel', '$http', '$q', '$timeout', 'PhSeries', 'math',
-    'isReverseTest', 'PhCompare',
+    'PhCompare',
     function CompareSubtestResultsCtrl($state, $stateParams, $scope, $rootScope,
                                        $location, thServiceDomain,
                                        ThOptionCollectionModel,
                                        ThRepositoryModel, ThResultSetModel,
                                        $http, $q, $timeout, PhSeries, math,
-                                       isReverseTest, PhCompare) {
+                                       PhCompare) {
         //TODO: duplicated from comparectrl
         function verifyRevision(project, revision, rsid) {
             return ThResultSetModel.getResultSetsFromRevision(project.name, revision).then(
@@ -302,7 +322,8 @@ perf.controller('CompareSubtestResultsCtrl', [
                     } else {
                         $scope.newResultSet = resultSet;
                     }
-                }, function(error) {
+                },
+                function(error) {
                     $scope.errors.push(error);
                 });
         }
@@ -348,6 +369,18 @@ perf.controller('CompareSubtestResultsCtrl', [
                     }
 
                     cmap.name = page;
+
+                    var graphsLink = PhCompare.getGraphsLink(
+                        $scope.originalProject, $scope.newProject, oldSig,
+                        $scope.originalResultSet, $scope.newResultSet);
+                    if (graphsLink) {
+                        cmap.links = [{
+                            title: 'graph',
+                            href: graphsLink
+                        }];
+                    }
+
+
                     $scope.compareResults[testName].push(cmap);
                 });
             });

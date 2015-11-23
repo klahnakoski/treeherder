@@ -2,7 +2,11 @@ import os
 import unittest
 
 from tests.sampledata import SampleData
-from treeherder.perfalert import *
+from treeherder.perfalert import (Analyzer,
+                                  analyze,
+                                  calc_t,
+                                  default_weights,
+                                  linear_weights)
 
 
 class TestAnalyze(unittest.TestCase):
@@ -29,21 +33,18 @@ class TestAnalyze(unittest.TestCase):
         self.assertEqual(calc_t([0.0, 0.0], [1.0, 1.0]), float('inf'))
 
 
-class TestTalosAnalyzer(unittest.TestCase):
-
-    def get_data(self):
-        times = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]
-        values = [0, 0, 0, 0, 0, 0, 0, 0, 1, 1,  1,  1,  1,  1,  1,  1]
-        return [PerfDatum(t, float(v)) for t, v in zip(times, values)]
+class TestAnalyzer(unittest.TestCase):
 
     def test_analyze_t(self):
-        a = TalosAnalyzer()
+        a = Analyzer()
 
-        data = self.get_data()
-        a.addData(data)
+        times = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]
+        values = [0, 0, 0, 0, 0, 0, 0, 0, 1, 1,  1,  1,  1,  1,  1,  1]
+        for (t, v) in zip(times, values):
+            a.add_data(t, float(v))
+
         result = [(d.push_timestamp, d.state) for d in
-                  a.analyze_t(back_window=5, fore_window=5, t_threshold=2,
-                              machine_threshold=15, machine_history_size=5)]
+                  a.analyze_t(back_window=5, fore_window=5, t_threshold=2)]
         self.assertEqual(result, [
             (1, 'good'),
             (2, 'good'),
@@ -67,23 +68,20 @@ class TestTalosAnalyzer(unittest.TestCase):
 
     def check_json(self, filename, expected_timestamps):
         """Parse JSON produced by http://graphs.mozilla.org/api/test/runs"""
-        # Configuration for TalosAnalyzer
+        # Configuration for Analyzer
         FORE_WINDOW = 12
         BACK_WINDOW = 12
         THRESHOLD = 7
-        MACHINE_THRESHOLD = 15
-        MACHINE_HISTORY_SIZE = 5
 
         payload = SampleData.get_perf_data(os.path.join('graphs', filename))
         runs = payload['test_runs']
-        data = [PerfDatum(r[2], r[3], testrun_id=r[0], machine_id=r[6],
-                          testrun_timestamp=r[2], buildid=r[1][1],
-                          revision=r[1][2]) for r in runs]
+        a = Analyzer()
+        for r in runs:
+            a.add_data(r[2], r[3], testrun_id=r[0],
+                       testrun_timestamp=r[2], buildid=r[1][1],
+                       revision=r[1][2])
 
-        a = TalosAnalyzer()
-        a.addData(data)
-        results = a.analyze_t(BACK_WINDOW, FORE_WINDOW, THRESHOLD,
-                              MACHINE_THRESHOLD, MACHINE_HISTORY_SIZE)
+        results = a.analyze_t(BACK_WINDOW, FORE_WINDOW, THRESHOLD)
         regression_timestamps = [d.testrun_timestamp for d in results if
                                  d.state == 'regression']
         self.assertEqual(regression_timestamps, expected_timestamps)

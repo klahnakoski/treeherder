@@ -19,15 +19,15 @@ treeherder.controller('SimilarJobsPluginCtrl', [
         $scope.get_similar_jobs = function(){
             thTabs.tabs.similarJobs.is_loading = true;
             var options = {
-                    count: $scope.page_size + 1,
-                    offset: ($scope.page - 1) * $scope.page_size
-                };
+                count: $scope.page_size + 1,
+                offset: ($scope.page - 1) * $scope.page_size
+            };
             angular.forEach($scope.similar_jobs_filters, function(value, key){
                 if(value){
                     options[key] = $scope.job[key];
                 }
             });
-            ThJobModel.get_list($scope.repoName, options)
+            ThJobModel.get_similar_jobs($scope.repoName, $scope.job.id, options)
                 .then(function(data){
                     if(data.length > 0){
                         if(data.length > $scope.page_size){
@@ -90,7 +90,6 @@ treeherder.controller('SimilarJobsPluginCtrl', [
 
         $scope.similar_jobs_filters = {
             "machine_id": false,
-            "job_type_id": true,
             "build_platform_id": true,
             "option_collection_hash": true
         };
@@ -136,12 +135,11 @@ treeherder.controller('SimilarJobsPluginCtrl', [
                     job_id: $scope.similar_job_selected.id
                 })
                 .then(function(artifact_list){
-                        if(artifact_list.length > 0){
-                            $scope.similar_job_selected.error_lines = artifact_list[0].blob.step_data.all_errors;
-                        }
-                    });
+                    if(artifact_list.length > 0){
+                        $scope.similar_job_selected.error_lines = artifact_list[0].blob.step_data.all_errors;
+                    }
                 });
+            });
         };
-}]);
-
-
+    }
+]);

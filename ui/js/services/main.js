@@ -15,6 +15,19 @@ treeherder.factory('thUrl', [
                 }
                 return thServiceDomain + "/api/project/" + repoName + uri;
             },
+            getProjectJobUrl: function(url, jobId, repoName) {
+                var uri = "/jobs/" + jobId + url;
+                return thUrl.getProjectUrl(uri, repoName);
+            },
+            getPushUrl: function(repo, fromChange, toChange) {
+                return "index.html#/jobs?" + _.reduce({
+                    repo: repo, fromchange: fromChange, tochange: toChange
+                }, function(result, v, k) {
+                    if (result.length)
+                        result += '&';
+                    return result + k + '=' + v;
+                }, "");
+            },
             getLogViewerUrl: function(job_id) {
                 return "logviewer.html#?job_id=" + job_id + "&repo=" + $rootScope.repoName;
             },
@@ -41,6 +54,7 @@ treeherder.factory('thCloneHtml', [
             'jobGroupClone.html',
             'jobGroupCountClone.html',
             'jobBtnClone.html',
+            'runnableJobBtnClone.html',
             'revisionUrlClone.html',
             'pushlogRevisionsClone.html'
         ];
@@ -144,10 +158,13 @@ treeherder.factory('BrowserId', [
              */
             verifyAssertion: function(assertion){
                 return $http.post(
-                    thServiceDomain+'/browserid/login/', {assertion: assertion},{
+                    thServiceDomain+'/browserid/login/',
+                    {assertion: assertion},
+                    {
                         headers: { 'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8'},
                         transformRequest: browserid.transform_data
-                });
+                    }
+                );
             },
 
             transform_data: function(data){
@@ -174,15 +191,17 @@ treeherder.factory('thNotify', [
              * @sticky is a boolean indicating if you want the message to disappear
              * after a while or not
              */
-            send: function(message, severity, sticky){
+            send: function(message, severity, sticky, linkText, url) {
                 $log.debug("received message", message);
-                var severity = severity || 'info';
-                var sticky = sticky || false;
+                severity = severity || 'info';
+                sticky = sticky || false;
                 var maxNsNotifications = 5;
                 thNotify.notifications.push({
                     message: message,
                     severity: severity,
-                    sticky: sticky
+                    sticky: sticky,
+                    linkText: linkText,
+                    url: url
                 });
 
                 if (!sticky) {

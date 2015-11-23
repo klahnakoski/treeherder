@@ -2,26 +2,59 @@
 
 var perf = angular.module("perf", ['ui.router', 'ui.bootstrap', 'treeherder']);
 
-perf.factory('PhSeries', ['$http', 'thServiceDomain', function($http, thServiceDomain) {
+treeherder.factory('PhSeries', ['$http', 'thServiceDomain', function($http, thServiceDomain) {
 
-    var _getSeriesSummary = function(projectName, signature, signatureProps,
-                                     optionCollectionMap) {
-        var platform = signatureProps.machine_platform;
-        var testName = signatureProps.test;
-        var subtestSignatures;
-        if (testName === undefined) {
-            testName = "summary";
-            subtestSignatures = signatureProps.subtest_signatures;
+    var _getTestName = function(signatureProps, displayOptions) {
+        if (displayOptions && displayOptions.abbreviate) {
+            // exclude "summary" for abbreviated output
+            if (signatureProps.test)
+                return signatureProps.suite + " " + signatureProps.test;
+            return signatureProps.suite;
         }
-        var name = signatureProps.suite + " " + testName;
+
+        var testName = signatureProps.test ? signatureProps.test : "summary";
+        return signatureProps.suite + " " + testName;
+    };
+
+    function _getSeriesOptions(signatureProps, optionCollectionMap) {
+        var options = [ optionCollectionMap[signatureProps.option_collection_hash] ];
+        if (signatureProps.test_options) {
+            options = options.concat(signatureProps.test_options);
+        }
+        return options;
+    };
+
+    var _getSeriesName = function(signatureProps, optionCollectionMap,
+                                  displayOptions) {
+        var platform = signatureProps.machine_platform;
+        var name = _getTestName(signatureProps);
+
+        if (displayOptions && displayOptions.includePlatformInName) {
+            name = name + " " + platform;
+        }
         var options = [ optionCollectionMap[signatureProps.option_collection_hash] ];
         if (signatureProps.test_options) {
             options = options.concat(signatureProps.test_options);
         }
         name = name + " " + options.join(" ");
+        return name;
+    };
 
-        return { name: name, projectName: projectName, signature: signature,
+    var _getSeriesSummary = function(projectName, signature, signatureProps,
+                                     optionCollectionMap) {
+        var platform = signatureProps.machine_platform;
+        var testName = signatureProps.test;
+        var subtestSignatures = signatureProps.subtest_signatures;
+        var options = [ optionCollectionMap[signatureProps.option_collection_hash] ];
+        if (signatureProps.test_options) {
+            options = options.concat(signatureProps.test_options);
+        }
+
+        return { name: _getSeriesName(signatureProps, optionCollectionMap),
+                 projectName: projectName, signature: signature,
                  platform: platform, options: options,
+                 lowerIsBetter: (signatureProps.lower_is_better === undefined ||
+                                 signatureProps.lower_is_better),
                  subtestSignatures: subtestSignatures };
     };
 
@@ -98,7 +131,22 @@ perf.factory('PhSeries', ['$http', 'thServiceDomain', function($http, thServiceD
         });
     };
 
+    var _getSeriesByJobId = function(projectName, jobId) {
+        return $http.get(thServiceDomain + '/api/project/' + projectName +
+            '/performance/data/?job_id=' + jobId).then(function(response) {
+                if(response.data) {
+                    return response.data;
+                } else {
+                    return $q.reject("No data been found for job id " +
+                        jobId + " in project " + projectName);
+                }
+            });
+    };
+
+
     return {
+        getTestName: _getTestName,
+        getSeriesName: _getSeriesName,
         getSeriesSummary: _getSeriesSummary,
 
         getSubtestSummaries: function(projectName, timeRange, optionMap, targetSignature) {
@@ -208,26 +256,16 @@ perf.factory('PhSeries', ['$http', 'thServiceDomain', function($http, thServiceD
         getSeriesByPlatform: function(prjectName, timeRange, platform, optionMap) {
             return _getSeriesByPlatform(prjectName, timeRange, platform, optionMap);
         },
+
+        getSeriesByJobId: function(projectName, jobId) {
+            return _getSeriesByJobId(projectName, jobId);
+        },
     };
 }]);
-
-perf.factory('isReverseTest', [ function() {
-    return function(testName) {
-        var reverseTests = ['dromaeo_dom', 'dromaeo_css', 'v8_7', 'canvasmark'];
-        var found = false;
-        reverseTests.forEach(function(rt) {
-            if (testName.indexOf(rt) >= 0) {
-                found = true;
-            }
-        });
-        return found;
-    };
-}]);
-
 
 perf.factory('PhCompare', [ '$q', '$http', 'thServiceDomain', 'PhSeries',
-                            'math', 'isReverseTest', 'phTimeRanges',
-                            function($q, $http, thServiceDomain, PhSeries, math, isReverseTest, phTimeRanges) {
+                            'math', 'phTimeRanges',
+                            function($q, $http, thServiceDomain, PhSeries, math, phTimeRanges) {
 
                                 // Used for t_test: default stddev if both sets have only a single value - 15%.
                                 // Should be rare case and it's unreliable, but at least have something.
@@ -368,21 +406,19 @@ perf.factory('PhCompare', [ '$q', '$http', 'thServiceDomain', 'PhSeries',
                                             return cmap; // No comparison, just display for one side.
 
                                         // Compare the sides.
-                                        // "Normal" tests are "lower is better". Reversed is.. reversed.
+                                        // Normally tests are "lower is better", can be over-ridden with a series option
                                         cmap.delta = (cmap.newValue - cmap.originalValue);
-                                        var newIsBetter = cmap.delta < 0; // New value is lower than orig value
-                                        if (isReverseTest(testName))
-                                            newIsBetter = !newIsBetter;
+                                        cmap.newIsBetter = (originalData.lowerIsBetter && cmap.delta < 0) ||
+                                            (!originalData.lowerIsBetter && cmap.delta > 0);
 
+                                        // delta percentage (for display)
                                         cmap.deltaPercentage = math.percentOf(cmap.delta, cmap.originalValue);
-
                                         // arbitrary scale from 0-20% multiplied by 5, capped
                                         // at 100 (so 20% regression == 100% bad)
                                         cmap.magnitude = Math.min(Math.abs(cmap.deltaPercentage)*5, 100);
-                                        cmap.newIsBetter = newIsBetter;
 
                                         var abs_t_value = Math.abs(math.t_test(originalData.values, newData.values, STDDEV_DEFAULT_FACTOR));
-                                        cmap.className = getClassName(newIsBetter, cmap.originalValue, cmap.newValue, abs_t_value);
+                                        cmap.className = getClassName(cmap.newIsBetter, cmap.originalValue, cmap.newValue, abs_t_value);
                                         cmap.confidence = abs_t_value;
                                         cmap.confidenceText = abs_t_value < T_VALUE_CARE_MIN ? "low" :
                                             abs_t_value < T_VALUE_CONFIDENT ? "med" :
@@ -470,6 +506,7 @@ perf.factory('PhCompare', [ '$q', '$http', 'thServiceDomain', 'PhSeries',
                                                                 resultsMap[resultSetId][signature] = {
                                                                     platform: seriesData.platform,
                                                                     name: seriesData.name,
+                                                                    lowerIsBetter: seriesData.lowerIsBetter,
                                                                     values: values
                                                                 };
                                                             }
@@ -480,6 +517,48 @@ perf.factory('PhCompare', [ '$q', '$http', 'thServiceDomain', 'PhSeries',
                                             return resultsMap;
                                         });
                                     },
+                                    getGraphsLink: function(baseProject, newProject, signature, baseResultSet, newResultSet) {
+                                        var graphsLink = 'perf.html#/graphs?';
+                                        function getSeriesParam(projectName, signature) {
+                                            return 'series=[' + [ projectName, signature,
+                                                                  1 ].join(',') + ']';
+                                        }
+
+                                        if (baseProject.name === newProject.name) {
+                                            // Case 1: old/new push same repository
+                                            graphsLink += getSeriesParam(
+                                                baseProject.name, signature);
+                                        } else {
+                                            // Case 2: different repositories
+                                            _.forEach(
+                                                [baseProject, newProject],
+                                                function(project) {
+                                                    if (graphsLink[graphsLink.length-1] !== '?') {
+                                                        graphsLink += '&';
+                                                    }
+                                                    graphsLink += getSeriesParam(
+                                                        project.name, signature);
+                                                });
+                                        }
+                                        _.forEach([baseResultSet.revision, newResultSet.revision],
+                                                  function(revision) {
+                                                      graphsLink += '&highlightedRevisions=' + revision;
+                                                  });
+
+                                        graphsLink += '&timerange=' + _.max(
+                                            _.map([baseResultSet, newResultSet],
+                                                  function(resultSet) {
+                                                      return _.find(
+                                                          _.pluck(phTimeRanges, 'value'),
+                                                          function(t) {
+                                                              return ((Date.now() / 1000.0) -
+                                                                      resultSet.push_timestamp) < t;
+                                                          });
+                                                  }));
+
+                                        return graphsLink;
+                                    }
+
                                 };
                             }]);
 

@@ -5,7 +5,7 @@
 treeherder.filter('showOrHide', function() {
     // determine whether this is a label for a job group (like mochitest)
     return function(input, isCollapsed) {
-        if (isCollapsed == true) {
+        if (isCollapsed === true) {
             return "show" + input;
         } else {
             return "hide" + input;
@@ -126,3 +126,9 @@ treeherder.filter('getRevisionUrl', ['thServiceDomain', function(thServiceDomain
         return '';
     };
 }]);
+
+treeherder.filter('classified', function() {
+    return function(matches){
+        return matches.some(function(x) {return x.is_best;}) ? "CLASSIFIED" : "UNCLASSIFIED";
+    };
+});

@@ -69,7 +69,7 @@ class PerfDataAdapterTest(TestCase):
         return (job_data, reference_data)
 
     def _verify_signature_datum(self, framework_name, suitename, testname,
-                                value, push_timestamp):
+                                lower_is_better, value, push_timestamp):
         repository = Repository.objects.get(name=self.REPO_NAME)
         signature = PerformanceSignature.objects.get(
             suite=suitename,
@@ -81,6 +81,7 @@ class PerfDataAdapterTest(TestCase):
                          str(self.platform))
         self.assertEqual(signature.last_updated, push_timestamp)
         self.assertEqual(signature.repository, repository)
+        self.assertEqual(signature.lower_is_better, lower_is_better)
 
         datum = PerformanceDatum.objects.get(signature=signature)
         self.assertEqual(datum.value, value)
@@ -88,10 +89,6 @@ class PerfDataAdapterTest(TestCase):
 
     def test_load_generic_data(self):
         framework_name = "cheezburger"
-
-        PerformanceDatum.objects.all().delete()
-        PerformanceSignature.objects.all().delete()
-        PerformanceFramework.objects.all().delete()
         PerformanceFramework.objects.get_or_create(name=framework_name)
 
         (job_data, reference_data) = self._get_job_and_reference_data()
@@ -104,15 +101,22 @@ class PerfDataAdapterTest(TestCase):
                 "suites": [
                     {
                         "name": "cheezburger metrics",
+                        "lowerIsBetter": True,
                         "value": 10.0,
                         "subtests": [
                             {
                                 "name": "test1",
-                                "value": 20.0
+                                "value": 20.0,
+                                "lowerIsBetter": True
                             },
                             {
                                 "name": "test2",
-                                "value": 30.0
+                                "value": 30.0,
+                                "lowerIsBetter": False
+                            },
+                            {
+                                "name": "test3",
+                                "value": 40.0
                             }
                         ]
                     }
@@ -128,7 +132,7 @@ class PerfDataAdapterTest(TestCase):
 
         load_perf_artifacts(self.REPO_NAME, reference_data, job_data,
                             submit_datum)
-        self.assertEqual(3, PerformanceSignature.objects.all().count())
+        self.assertEqual(4, PerformanceSignature.objects.all().count())
         self.assertEqual(1, PerformanceFramework.objects.all().count())
         framework = PerformanceFramework.objects.all()[0]
         self.assertEqual(framework_name, framework.name)
@@ -137,13 +141,18 @@ class PerfDataAdapterTest(TestCase):
 
         # verify summary, then subtests
         self._verify_signature_datum(perf_datum['framework']['name'],
-                                     perf_datum['suites'][0]['name'], '', 10.0,
+                                     perf_datum['suites'][0]['name'],
+                                     '',
+                                     perf_datum['suites'][0]['lowerIsBetter'],
+                                     perf_datum['suites'][0]['value'],
                                      datetime.datetime.fromtimestamp(
                                          self.PUSH_TIMESTAMP))
         for subtest in perf_datum['suites'][0]['subtests']:
             self._verify_signature_datum(perf_datum['framework']['name'],
                                          perf_datum['suites'][0]['name'],
-                                         subtest['name'], subtest['value'],
+                                         subtest['name'],
+                                         subtest.get('lowerIsBetter', True),
+                                         subtest['value'],
                                          datetime.datetime.fromtimestamp(
                                              self.PUSH_TIMESTAMP))
 
@@ -165,15 +174,6 @@ class PerfDataAdapterTest(TestCase):
 
         talos_perf_data = SampleData.get_talos_perf_data()
         for talos_datum in talos_perf_data:
-            # delete any previously-created perf objects
-            # FIXME: because of https://bugzilla.mozilla.org/show_bug.cgi?id=1133273
-            # this can be really slow if we have a dev database with lots of
-            # performance data in it (if the test succeeds, the transaction
-            # will be rolled back so at least it won't pollute the production
-            # database)
-            PerformanceSignature.objects.all().delete()
-            PerformanceDatum.objects.all().delete()
-
             (job_data, reference_data) = self._get_job_and_reference_data()
 
             datum = {
@@ -205,10 +205,12 @@ class PerfDataAdapterTest(TestCase):
                 datum = PerformanceDatum.objects.get(signature=signature)
                 if talos_datum.get('summary'):
                     # if we have a summary, ensure the subtest summary values made
-                    # it in
+                    # it in and that we ingested lowerIsBetter ok (if it was there)
+                    subtest = talos_datum['summary']['subtests'][testname]
                     self.assertEqual(
-                        round(talos_datum['summary']['subtests'][testname]['filtered'], 2),
-                        datum.value)
+                        round(subtest['filtered'], 2), datum.value)
+                    self.assertEqual(signature.lower_is_better,
+                                     subtest.get('lowerIsBetter', True))
                 else:
                     # this is an old style talos blob without a summary. these are going
                     # away, so I'm not going to bother testing the correctness. however
@@ -244,3 +246,7 @@ class PerfDataAdapterTest(TestCase):
             self.assertEqual(datum.push_timestamp,
                              datetime.datetime.fromtimestamp(
                                  self.PUSH_TIMESTAMP))
+
+            # delete perf objects for next iteration
+            PerformanceSignature.objects.all().delete()
+            PerformanceDatum.objects.all().delete()

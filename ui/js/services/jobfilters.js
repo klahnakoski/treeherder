@@ -53,6 +53,9 @@ treeherder.factory('thJobFilters', [
             }
         };
 
+        // failure classification ids that should be shown in "unclassified" mode
+        var UNCLASSIFIED_IDS = [1, 7];
+
         // used with field-filters to determine how to match the value against the
         // job field.
         var MATCH_TYPE = {
@@ -169,8 +172,8 @@ treeherder.factory('thJobFilters', [
             var filters = _.clone($location.search()[_withPrefix(field)]);
             if (filters) {
                 return _toArray(filters);
-            } else if (DEFAULTS.hasOwnProperty(field)) {
-                return DEFAULTS[field].values.slice();
+            } else if (DEFAULTS.hasOwnProperty(_withoutPrefix(field))) {
+                return DEFAULTS[_withoutPrefix(field)].values.slice();
             }
             return [];
         };
@@ -218,29 +221,29 @@ treeherder.factory('thJobFilters', [
 
                         switch (FIELD_CHOICES[field].matchType) {
 
-                        case MATCH_TYPE.substr:
-                            if (!_containsSubstr(values, jobFieldValue.toLowerCase())) {
-                                return false;
-                            }
-                            break;
+                            case MATCH_TYPE.substr:
+                                if (!_containsSubstr(values, jobFieldValue.toLowerCase())) {
+                                    return false;
+                                }
+                                break;
 
-                        case MATCH_TYPE.searchStr:
-                            if (!_containsAllSubstr(values, jobFieldValue.toLowerCase())) {
-                                return false;
-                            }
-                            break;
+                            case MATCH_TYPE.searchStr:
+                                if (!_containsAllSubstr(values, jobFieldValue.toLowerCase())) {
+                                    return false;
+                                }
+                                break;
 
-                        case MATCH_TYPE.exactstr:
-                            if (!_.contains(values, jobFieldValue.toLowerCase())) {
-                                return false;
-                            }
-                            break;
+                            case MATCH_TYPE.exactstr:
+                                if (!_.contains(values, jobFieldValue.toLowerCase())) {
+                                    return false;
+                                }
+                                break;
 
-                        case MATCH_TYPE.choice:
-                            if (!_.contains(values, String(jobFieldValue).toLowerCase())) {
-                                return false;
-                            }
-                            break;
+                            case MATCH_TYPE.choice:
+                                if (!_.contains(values, String(jobFieldValue).toLowerCase())) {
+                                    return false;
+                                }
+                                break;
                         }
                     }
                 }
@@ -327,12 +330,15 @@ treeherder.factory('thJobFilters', [
         };
 
         var toggleInProgress = function() {
-            var rsValues = _toArray($location.search()[QS_RESULT_STATUS]);
-            var pendRun = ['pending', 'running'];
-            if (_.difference(pendRun, rsValues).length === 0) {
-                rsValues = _.without(rsValues, 'pending', 'running');
+            toggleResultStatuses(['pending', 'running']);
+        };
+
+        var toggleResultStatuses = function(resultStatuses) {
+            var rsValues = _getFiltersOrDefaults(RESULT_STATUS);
+            if (_.difference(resultStatuses, rsValues).length === 0) {
+                rsValues = _.difference(rsValues, resultStatuses);
             } else {
-                rsValues = _.uniq(_.flatten(rsValues, pendRun));
+                rsValues = _.uniq(rsValues.concat(resultStatuses));
             }
             $location.search(QS_RESULT_STATUS, rsValues);
         };
@@ -421,7 +427,7 @@ treeherder.factory('thJobFilters', [
         };
 
         var _isJobClassified = function(job) {
-            return job.failure_classification_id !== 1;
+            return !_.contains(UNCLASSIFIED_IDS, job.failure_classification_id);
         };
 
         var stripFiltersFromQueryString = function(locationSearch) {
@@ -552,6 +558,7 @@ treeherder.factory('thJobFilters', [
             removeAllFieldFilters: removeAllFieldFilters,
             resetNonFieldFilters: resetNonFieldFilters,
             toggleFilters: toggleFilters,
+            toggleResultStatuses: toggleResultStatuses,
             toggleInProgress: toggleInProgress,
             toggleUnclassifiedFailures: toggleUnclassifiedFailures,
             toggleTier1Only: toggleTier1Only,

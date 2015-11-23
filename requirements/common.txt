@@ -21,8 +21,8 @@ kombu==3.0.26
 # sha256: Y9f3sUog8p90Mlpp5ttFkl6vbjoAPqtGwCNP0FCoyT8
 simplejson==3.7.3
 
-# sha256: hbroOd-up9i4YNH1v-t46GEswfnxSzYFm-IEO0HjcAs
-newrelic==2.54.0.41
+# sha256: KXli8j9mkLQbdp9g67m0Oy3k8jGLnFCLkqAvCrPth4s
+newrelic==2.58.1.44
 
 # Required by datasource
 # sha256: gRBAtkfl1WhvhNtBXv1pfmJQAIsRK2kJunesBZ4UDHQ
@@ -79,8 +79,8 @@ mozlog==3.0
 # sha256: BK-ioGq33MqdgXF7Qgp6FIJgYemyYUpcd90kx1zPl-Q
 futures==3.0.3
 
-# sha256: Vsi_w_4K-L4pRwKWLo2Gcj1RN8ldLbFkQel1BWZF6Xs
-https://github.com/jeads/datasource/archive/v0.9.tar.gz#egg=datasource==0.9
+# sha256: e2KpUXwldQ0DgJB2BTdY1XQN5FqMbG2RlMLAiFtKPqI
+https://github.com/jeads/datasource/archive/v0.10.0.tar.gz#egg=datasource==0.10.0
 
 # Required by jsonschema
 # sha256: ajt0IEMrCBfvGSrvNBzXZuGZgBqQyn_jGfnV_KQO3aI

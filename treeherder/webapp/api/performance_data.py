@@ -4,18 +4,21 @@ import time
 from collections import defaultdict
 
 from rest_framework import (exceptions,
+                            filters,
+                            pagination,
                             viewsets)
 from rest_framework.response import Response
 
+from performance_serializers import PerformanceAlertSummarySerializer
 from treeherder.model import models
-from treeherder.perf.models import (PerformanceDatum,
+from treeherder.perf.models import (PerformanceAlertSummary,
+                                    PerformanceDatum,
                                     PerformanceSignature)
 
 
 class PerformanceSignatureViewSet(viewsets.ViewSet):
 
     def list(self, request, project):
-
         repository = models.Repository.objects.get(name=project)
 
         signature_data = PerformanceSignature.objects.filter(
@@ -45,18 +48,23 @@ class PerformanceSignatureViewSet(viewsets.ViewSet):
 
         ret = {}
         for (signature_hash, option_collection_hash, platform, suite, test,
-             extra_properties) in signature_data.values_list(
+             lower_is_better, extra_properties) in signature_data.values_list(
                  'signature_hash',
                  'option_collection__option_collection_hash',
                  'platform__platform', 'suite',
-                 'test', 'extra_properties').distinct():
+                 'test', 'lower_is_better', 'extra_properties').distinct():
             ret[signature_hash] = {
                 'option_collection_hash': option_collection_hash,
                 'machine_platform': platform,
                 'suite': suite
             }
+            if not lower_is_better:
+                # almost always true, save some banwidth by assuming that by
+                # default
+                ret[signature_hash]['lower_is_better'] = False
             if test:
-                # test may be empty in case of a summary test, leave it empty then
+                # test may be empty in case of a summary test, leave it empty
+                # then
                 ret[signature_hash]['test'] = test
             ret[signature_hash].update(json.loads(extra_properties))
 
@@ -124,3 +132,24 @@ class PerformanceDatumViewSet(viewsets.ViewSet):
             })
 
         return Response(ret)
+
+
+class AlertSummaryPagination(pagination.CursorPagination):
+    ordering = ('-last_updated', '-id')
+    page_size = 10
+
+
+class PerformanceAlertSummaryViewSet(viewsets.ReadOnlyModelViewSet):
+    """ViewSet for the performance alert summary model"""
+    queryset = PerformanceAlertSummary.objects.all().prefetch_related(
+        'alerts', 'alerts__series_signature',
+        'repository',
+        'alerts__series_signature__platform',
+        'alerts__series_signature__option_collection',
+        'alerts__series_signature__option_collection__option')
+
+    serializer_class = PerformanceAlertSummarySerializer
+    filter_backends = (filters.DjangoFilterBackend, filters.OrderingFilter)
+    filter_fields = ['id']
+    ordering = ('-last_updated', '-id')
+    pagination_class = AlertSummaryPagination

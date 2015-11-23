@@ -97,6 +97,7 @@
         <script src="js/models/bug_job_map.js"></script>
         <script src="js/models/classification.js"></script>
         <script src="js/models/job.js"></script>
+        <script src="js/models/runnable_job.js"></script>
         <script src="js/models/job_exclusion.js"></script>
         <script src="js/models/exclusion_profile.js"></script>
         <script src="js/models/build_platform.js"></script>
@@ -106,6 +107,8 @@
         <script src="js/models/option_collection.js"></script>
         <script src="js/models/user.js"></script>
         <script src="js/models/error.js"></script>
+        <script src="js/models/failure_lines.js"></script>
+        <script src="js/perf.js"></script>
         <!-- Controllers -->
         <script src="js/controllers/main.js"></script>
         <script src="js/controllers/sheriff.js"></script>
@@ -120,6 +123,7 @@
         <script src="plugins/annotations/controller.js"></script>
         <script src="plugins/failure_summary/controller.js"></script>
         <script src="plugins/similar_jobs/controller.js"></script>
+        <script src="plugins/auto_classification/controller.js"></script>
 
         <script src="js/filters.js"></script>
         <!-- endbuild -->
@@ -213,6 +217,15 @@
         <script type="'text/ng-template'" id="jobBtnClone.html">
             <button class="btn job-btn btn-xs {{ btnClass }} {{ key }}"
                   data-jmkey="{{ key }}"
+                  ignore-job-clear-on-click
+                  title="{{ title }}">{{ value }}</button>
+        </script>
+
+        <!-- Runnable Job Btn span -->
+        <script type="'text/ng-template'" id="runnableJobBtnClone.html">
+            <button class="btn runnable-job-btn {{ key }}"
+                  data-jmkey="{{ key }}"
+                  data-buildername="{{ buildername }}"
                   ignore-job-clear-on-click
                   title="{{ title }}">{{ value }}</button>
         </script>

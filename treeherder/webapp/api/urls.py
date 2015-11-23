@@ -11,7 +11,8 @@ from treeherder.webapp.api import (artifact,
                                    note,
                                    performance_data,
                                    refdata,
-                                   resultset)
+                                   resultset,
+                                   runnable_jobs)
 
 # router for views that are bound to a project
 # i.e. all those views that don't involve reference data
@@ -21,6 +22,12 @@ project_bound_router.register(
     r'jobs',
     jobs.JobsViewSet,
     base_name='jobs',
+)
+
+project_bound_router.register(
+    r'runnable_jobs',
+    runnable_jobs.RunnableJobsViewSet,
+    base_name='runnable_jobs',
 )
 
 project_bound_router.register(
@@ -93,6 +100,9 @@ default_router.register(r'user', refdata.UserViewSet, base_name='user')
 default_router.register(r'exclusion-profile', refdata.ExclusionProfileViewSet)
 default_router.register(r'job-exclusion', refdata.JobExclusionViewSet)
 default_router.register(r'matcher', refdata.MatcherViewSet)
+default_router.register(r'performance/alertsummary',
+                        performance_data.PerformanceAlertSummaryViewSet,
+                        base_name='performance-alert-summaries')
 
 urlpatterns = patterns(
     '',
