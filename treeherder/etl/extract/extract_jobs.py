@@ -1,94 +1,116 @@
 from redis import Redis
 
 from jx_bigquery import bigquery
-from mo_files import File
-from mo_json import json2value
-from mo_logs import Log, startup, constants
-from mo_times.dates import parse
-from mo_sql import (
-    SQL,
-)
-from jx_mysql.mysql import MySQL
+from jx_mysql.mysql import sql_query, MySQL
 from jx_mysql.mysql_snowflake_extractor import MySqlSnowflakeExtractor
-from jx_sqlite.sqlite import sql_query
+from mo_files import File
+from mo_json import json2value, value2json
+from mo_logs import Log, startup, constants
+from mo_sql import SQL
+from mo_times.dates import parse
 from treeherder.etl.extract import VENDOR_PATH
 
-CONFIG_FILE = (File.new_instance(__file__).parent / "extract_jobs.json").abs_path
+CONFIG_FILE = (File.new_instance(__file__).parent / "extract_jobs.json").abspath
 
 _keep_import = VENDOR_PATH
 
 
 class ExtractJobs:
-    def run(self):
-        # SETUP LOGGING
-        settings = startup.read_settings(filename=CONFIG_FILE)
-        constants.set(settings.constants)
-        Log.start(settings.debug)
+    def run(self, force=False):
+        try:
+            # SETUP LOGGING
+            settings = startup.read_settings(filename=CONFIG_FILE)
+            constants.set(settings.constants)
+            Log.start(settings.debug)
 
-        # RECOVER LAST SQL STATE
-        redis = Redis()
-        state = redis.get(settings.extractor.key)
+            if not settings.extractor.app_name:
+                Log.error("Expecting an extractor.app_name in config file")
 
-        if not state:
-            state = (0, 0)
-            redis.set(settings.extractor.key, state)
-        last_modified, job_id = json2value(state)
+            # RECOVER LAST SQL STATE
+            redis = Redis()
+            state = redis.get(settings.extractor.key)
 
-        # SCAN SCHEMA, GENERATE EXTRACTION SQL
-        extractor = MySqlSnowflakeExtractor(settings.source)
-        canonical_sql = extractor.get_sql(SQL("SELECT 0"))
+            if not state:
+                state = (0, 0)
+                redis.set(settings.extractor.key, value2json(state).encode("utf8"))
+            else:
+                state = json2value(state.decode("utf8"))
 
-        # ENSURE PREVIOUS RUN DID NOT CHANGE ANYTHING
-        old_sql = redis.get(settings.extractor.sql)
-        if old_sql and old_sql != canonical_sql:
-            Log.error("Schema has changed")
-        redis.set(settings.extractor.sql, canonical_sql)
+            last_modified, job_id = state
 
-        # SETUP SOURCE
-        source = MySQL(settings.source.database)
+            # SCAN SCHEMA, GENERATE EXTRACTION SQL
+            extractor = MySqlSnowflakeExtractor(settings.source)
+            canonical_sql = extractor.get_sql(SQL("SELECT 0"))
 
-        # SETUP DESTINATION
-        destination = bigquery.Dataset(settings.destination).get_or_create_table(
-            settings.destination
-        )
+            # ENSURE PREVIOUS RUN DID NOT CHANGE ANYTHING
+            old_sql = redis.get(settings.extractor.sql)
+            if old_sql and old_sql.decode("utf8") != canonical_sql.sql:
+                if force:
+                    Log.warning("Schema has changed")
+                else:
+                    Log.error("Schema has changed")
+            redis.set(settings.extractor.sql, canonical_sql.sql.encode("utf8"))
 
-        while True:
-            Log.note(
-                "Extracting jobs for {{last_modified|datetime}}, {{job_id}}",
-                last_modified=last_modified,
-                job_id=job_id,
-            )
-            get_ids = sql_query({
-                "from": "job",
-                "select": ["id"],
-                "where": {
-                    "or": [
-                        {"gt": {"last_modified": parse(last_modified)}},
-                        {
-                            "and": [
-                                {"eq": {"last_modified": parse(last_modified)}},
-                                {"gt": {"id": job_id}},
+            # SETUP SOURCE
+            source = MySQL(settings.source.database)
+
+            # SETUP DESTINATION
+            destination = bigquery.Dataset(
+                dataset=settings.extractor.app_name, kwargs=settings.destination
+            ).get_or_create_table(settings.destination)
+
+            while True:
+                Log.note(
+                    "Extracting jobs for last_modified={{last_modified|datetime|quote}}, job.id={{job_id}}",
+                    last_modified=last_modified,
+                    job_id=job_id,
+                )
+
+                # Example: job.id ==283890114
+                # get_ids = ConcatSQL((SQL_SELECT, sql_alias(quote_value(283890114), "id")))
+                get_ids = sql_query(
+                    {
+                        "from": "job",
+                        "select": ["id"],
+                        "where": {
+                            "or": [
+                                {"gt": {"last_modified": parse(last_modified)}},
+                                {
+                                    "and": [
+                                        {"eq": {"last_modified": parse(last_modified)}},
+                                        {"gt": {"id": job_id}},
+                                    ]
+                                },
                             ]
                         },
-                    ]
-                },
-                "sort": ["last_modified", "id"],
-                "limit": settings.extractor.chunk_size
-            })
+                        "sort": ["last_modified", "id"],
+                        "limit": settings.extractor.chunk_size,
+                    }
+                )
 
-            sql = extractor.get_sql(get_ids)
+                sql = extractor.get_sql(get_ids)
 
-            # PULL FROM source, AND PUSH TO destination
-            acc = []
-            cursor = source.query(sql, stream=True, row_tuples=True)
-            extractor.construct_docs(self, cursor, acc.append, False)
-            if not acc:
-                break
-            destination.extend(acc)
+                # PULL FROM source, AND PUSH TO destination
+                acc = []
+                with source.transaction() as t:
+                    cursor = source.query(sql, stream=True, row_tuples=True)
+                    extractor.construct_docs(cursor, acc.append, False)
+                if not acc:
+                    break
+                destination.extend(acc)
 
-            # RECORD THE STATE
-            last_doc = acc[-1]
-            last_modified, job_id = last_doc.last_modified, last_doc.id
-            redis.set(settings.extractor.key, last_modified, job_id)
+                # RECORD THE STATE
+                last_doc = acc[-1]
+                last_modified, job_id = last_doc.last_modified, last_doc.id
+                redis.set(
+                    settings.extractor.key,
+                    value2json((last_modified, job_id)).encode("utf8"),
+                )
 
-        Log.note("done job extraction")
+            Log.note("done job extraction")
+        except Exception as e:
+            Log.error("problem with extraction", cause=e)
+
+
+if __name__ == "__main__":
+    ExtractJobs().run()

@@ -113,3 +113,5 @@ zope.deferredimport
 zope.deprecation
 zope.proxy
 pytest-asyncio
+pymysql
+google-cloud-bigquery

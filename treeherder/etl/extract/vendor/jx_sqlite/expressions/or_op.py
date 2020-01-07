@@ -10,6 +10,7 @@
 from __future__ import absolute_import, division, unicode_literals
 
 from jx_base.expressions import OrOp as OrOp_
+from jx_sqlite.expressions import _utils
 from jx_sqlite.expressions._utils import SQLang, check
 from mo_dots import wrap
 from mo_sql import SQL_OR, sql_iso, JoinSQL
@@ -34,3 +35,6 @@ class OrOp(OrOp_):
                 }
             ]
         )
+
+
+_utils.OrOp = OrOp

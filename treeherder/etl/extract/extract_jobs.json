@@ -27,13 +27,14 @@
         "exclude": [
             "auth_user",
             "group_failure_lines",
-            "text_log_step",
-            "text_log_error_metadata",
             "commit",
             "performance_datum",
             "performance_alert_summary",
             "performance_signature",
-            "runnable_job"
+            "runnable_job",
+            "text_log_error_metadata",
+            "failure_line.stackwalk_stdout",
+            "failure_line.stackwalk_stderr"
         ],
         "reference_only": [
             "classified_failure",
@@ -48,12 +49,14 @@
         "database": {
             "debug": false,
             "schema": "treeherder",
-            "ssl": {
-                "ca": "https://s3.amazonaws.com/rds-downloads/rds-combined-ca-bundle.pem"
-            },
-            "host": {
-                "$ref": "env://DATABASE_URL"
-            }
+            "$ref": "~/private.json#treeherder",
+
+//            "ssl": {
+//                "ca": "https://s3.amazonaws.com/rds-downloads/rds-combined-ca-bundle.pem"
+//            },
+//            "host": {
+//                "$ref": "env://DATABASE_URL"
+//            }
         }
     },
     "destination": {
@@ -73,22 +76,24 @@
         },
         "table": "jobs",
         "top_level_fields": {
-            "job.id": "_job_id",
-            "last_modified": "_last_modified",
-            "action.request_time": "_request_time"
         },
         "partition": {
-            "field": "action.request_time",
+            "field": "submit_time",
             "expire": "2year"
         },
         "id":{
-            "field": "job.id",
+            "field": "id",
             "version": "last_modified"
         },
         "cluster": [
-            "job.id",
+            "id",
             "last_modified"
         ],
+        "schema": {
+            "id": "number",
+            "submit_time": "time",
+            "last_modified": "time"
+        },
         "sharded": true
     },
     "constants": {},

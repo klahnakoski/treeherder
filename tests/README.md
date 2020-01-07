@@ -61,6 +61,8 @@ Be sure docker-compose is up, you are in the `treeherder` main directory, your v
 
 If you made some changes, and want to submit a pull request; run the `./runtests.sh` script (found in the main directory).  It will run some linters to check your submission.
 
+> For Windows, you can run the checks in a container (see below)
+
 
 ### Using containers
 

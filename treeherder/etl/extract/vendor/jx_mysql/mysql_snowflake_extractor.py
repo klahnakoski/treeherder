@@ -67,7 +67,18 @@ class MySqlSnowflakeExtractor(object):
     @override
     def __init__(self, kwargs=None):
         self.settings = kwargs
-        self.settings.exclude = set(listwrap(self.settings.exclude))
+        excludes = listwrap(self.settings.exclude)
+        self.settings.exclude = set(
+            e
+            for e in excludes
+            if len(split_field(e)) == 1
+        )
+        self.settings.exclude_columns = set(
+            p
+            for e in excludes
+            for p in [tuple(split_field(e))]
+            if len(p) > 1
+        )
         self.settings.exclude_path = list(
             map(split_field, listwrap(self.settings.exclude_path))
         )
@@ -203,8 +214,7 @@ class MySqlSnowflakeExtractor(object):
                 c.constraint_name,
                 k.ordinal_position,
                 k.column_name
-        """,
-            param=self.settings.database,
+            """
         )
 
         # ORGANIZE, AND PICK ONE UNIQUE CONSTRAINT FOR LINKING
@@ -283,8 +293,7 @@ class MySqlSnowflakeExtractor(object):
                 data_type
             FROM
                 information_schema.columns
-        """,
-            param=self.settings.database,
+            """
         )
 
         reference_only_tables = [
@@ -835,6 +844,8 @@ class MySqlSnowflakeExtractor(object):
             selects = []
             not_null_column_seen = False
             for ci, c in enumerate(self.columns):
+                if (c.column.table.name, c.column.column.name) in self.settings.exclude_columns:
+                    continue
                 if c.column_alias[1:] != text(ci):
                     Log.error("expecting consistency")
                 if c.nested_path[0] == nested_path[0]:

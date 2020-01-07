@@ -14,9 +14,9 @@ from jx_base.expressions import (
     FALSE,
     TRUE,
     ZERO,
-    builtin_ops,
     simplified,
 )
+from jx_base.expressions._utils import builtin_ops
 from jx_sqlite.expressions._utils import SQLang, check
 from jx_sqlite.expressions.case_op import CaseOp
 from jx_sqlite.expressions.literal import Literal

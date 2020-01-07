@@ -36,14 +36,6 @@ class Partition(object):
         ):
             Log.error("expecting durations")
 
-    def apply(self, row):
-        """
-        ENSURE PARTITION FIELD IS STEP TO TIMESTAMP
-        :param row:
-        :return:
-        """
-        row[self.field] = Date(row[self.field]).format()
-
     @property
     def bq_time_partitioning(self):
         return TimePartitioning(

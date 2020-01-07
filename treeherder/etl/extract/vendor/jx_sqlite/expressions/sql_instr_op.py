@@ -11,7 +11,6 @@ from __future__ import absolute_import, division, unicode_literals
 
 from jx_base.expressions import SqlInstrOp as SqlInstrOp_
 from jx_sqlite.expressions._utils import check
-from jx_sqlite.expressions.sql_instr_op import SqlInstrOp
 from mo_dots import wrap
 from mo_sql import sql_iso, sql_list
 

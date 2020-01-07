@@ -30,7 +30,7 @@ from mo_dots import (
     Null,
     unwraplist,
     is_data,
-    Data)
+    Data, coalesce, wrap)
 from mo_future import is_text, text, first
 from mo_kwargs import override
 from mo_logs import Log, Except
@@ -135,7 +135,7 @@ class Dataset(Container):
     def create_table(
         self,
         table,
-        schema=None,
+        lookup=None,
         typed=True,
         read_only=True,  # TO PREVENT ACCIDENTAL WRITING
         sharded=False,
@@ -144,20 +144,22 @@ class Dataset(Container):
         top_level_fields=None,
         kwargs=None,
     ):
-        partition = Partition(kwargs=partition, schema=schema)
+        full_name = self.full_name + escape_name(table)
+        schema = Snowflake(text(full_name), top_level_fields, partition, lookup=lookup)
 
         if read_only:
             Log.error("Can not create a table for read-only use")
 
         if sharded:
-            view_sql_name = quote_column(self.full_name + escape_name(table))
+            view_sql_name = quote_column(full_name)
             shard_name = escape_name(table + "_" + "".join(Random.sample(ALLOWED, 20)))
             shard_api_name = self.full_name + shard_name
             _shard = bigquery.Table(text(shard_api_name), schema=schema.to_bq_schema())
-            _shard.time_partitioning = unwrap(partition.bq_time_partitioning)
-            _shard.clustering_fields = unwrap(
-                unwraplist([text(ApiName(*split_field(f))) for f in listwrap(cluster)])
-            )
+            _shard.time_partitioning = unwrap(schema._partition.bq_time_partitioning)
+            _shard.clustering_fields = [
+                first(schema.leaves(f)).es_column
+                for f in listwrap(cluster)
+            ]
             self.shard = self.client.create_table(_shard)
 
             self.client.query(
@@ -174,10 +176,8 @@ class Dataset(Container):
                 ).sql
             )
         else:
-            api_name = escape_name(table)
-            full_name = self.full_name + api_name
             _table = bigquery.Table(text(full_name), schema=schema.to_bq_schema())
-            _table.time_partitioning = unwrap(partition.bq_time_partitioning)
+            _table.time_partitioning = unwrap(schema._partition.bq_time_partitioning)
             _table.clustering_fields = [
                 l.es_column for f in listwrap(cluster) for l in schema.leaves(f)
             ]
@@ -237,9 +237,9 @@ class Table(Facts):
         else:
             if alias_view.table_type != "VIEW":
                 Log.error("Sharded tables require a view")
-            current_view = container.client.get_table(table)
+            current_view = container.client.get_table(text(self.full_name))
             view_sql = current_view.view_query
-            self.shard = container.client.get_table(_extract_primary_shard_name(view_sql))
+            self.shard = container.client.get_table(text(container.full_name+_extract_primary_shard_name(view_sql)))
         self._schema = Snowflake.parse(
             alias_view.schema, text(self.full_name), self.top_level_fields, partition
         )
@@ -255,8 +255,8 @@ class Table(Facts):
         primary_shard = self.container.create_table(
             table=self.short_name + "_" + "".join(Random.sample(ALLOWED, 20)),
             sharded=False,
+            lookup=self._schema.lookup,
             kwargs=self.config,
-            schema=self._schema,
         )
         self.shard = primary_shard.shard
 
@@ -271,11 +271,11 @@ class Table(Facts):
                     output = []
                     for rownum, row in enumerate(rows):
                         typed, more, add_nested = typed_encode(row, self.schema)
+                        update.update(more)
                         if add_nested:
                             # row HAS NEW NESTED COLUMN!
                             # GO OVER THE rows AGAIN SO "RECORD" GET MAPPED TO "REPEATED"
                             break
-                        update.update(more)
                         output.append(typed)
                     else:
                         break
@@ -296,7 +296,12 @@ class Table(Facts):
                     ignore_unknown_values=False,
                 )
             if failures:
-                Log.error("expecting no failures:\n{{failures}}", failure=failures)
+                if all(r=="stopped" for r in wrap(failures).errors.reason):
+                    self._create_new_shard()
+                    Log.note(
+                        "STOPPED encountered: Added new shard with name: {{shard}}", shard=self.shard.table_id
+                    )
+                Log.error("expecting no failures:\n{{failures|json}}", failures=failures)
             else:
                 Log.note("{{num}} rows added", num=len(output))
         except Exception as e:

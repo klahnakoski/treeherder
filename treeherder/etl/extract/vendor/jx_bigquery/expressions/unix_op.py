@@ -14,7 +14,6 @@ from jx_bigquery.expressions._utils import check
 from mo_dots import wrap
 from mo_sql import sql_iso
 
-
 class UnixOp(UnixOp_):
     @check
     def to_bq(self, schema, not_null=False, boolean=False):

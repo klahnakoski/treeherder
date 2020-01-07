@@ -41,3 +41,5 @@ celerybeat-schedule
 
 # Ignore coverage results
 coverage
+/treeherder/etl/extract/vendor/pyLibrary/vendor/sqlite
+/resources/pem

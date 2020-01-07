@@ -16,7 +16,6 @@ import sys
 from collections import Mapping, namedtuple
 
 from jx_base import jx_expression
-from jx_sqlite.expressions import SQLang
 from mo_dots import Data, coalesce, unwraplist, listwrap, wrap
 from mo_files import File
 from mo_future import allocate_lock as _allocate_lock, text, first, is_text, zip_longest
@@ -672,6 +671,8 @@ def sql_query(command):
         if command.where.eq:
             acc.append(sql_eq(**command.where.eq))
         else:
+            from jx_sqlite.expressions import SQLang
+
             where = SQLang[jx_expression(command.where)].to_sql[0].b
             acc.append(where)
 
