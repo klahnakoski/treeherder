@@ -1,0 +1,104 @@
+{
+    "extractor": {
+        "app_name": {
+            "$ref": "env://NEW_RELIC_APP_NAME"
+        },
+        "key": "treeherder.etl.extract.job.state",
+        "sql": "treeherder.etl.extract.job.sql",
+        "chunk_size": 1000
+    },
+    "source": {
+        "fact_table": "job",
+        "show_foreign_keys": false,
+        "null_values": [
+            "-",
+            "unknown",
+            ""
+        ],
+        "add_relations": [
+            "treeherder.performance_datum.ds_job_id -> treeherder.job.project_specific_id",
+            "treeherder.performance_datum.repository_id -> treeherder.job.repository_id",
+            "treeherder.job.option_collection_hash -> treeherder.option_collection.option_collection_hash",
+            "treeherder.job.failure_classification_id -> treeherder.failure_classification.id",
+            "treeherder.job.autoclassify_status -> treeherder.failure_classification.id"
+        ],
+        "include": [
+        ],
+        "exclude": [
+            "auth_user",
+            "group_failure_lines",
+            "text_log_step",
+            "text_log_error_metadata",
+            "commit",
+            "performance_datum",
+            "performance_alert_summary",
+            "performance_signature",
+            "runnable_job"
+        ],
+        "reference_only": [
+            "classified_failure",
+            "failure_classification.name",
+            "job_group",
+            "machine_platform.platform",
+            "matcher.name",
+            "option.name",
+            "repository.name",
+            "user.email"
+        ],
+        "database": {
+            "debug": false,
+            "schema": "treeherder",
+            "ssl": {
+                "ca": "https://s3.amazonaws.com/rds-downloads/rds-combined-ca-bundle.pem"
+            },
+            "host": {
+                "$ref": "env://DATABASE_URL"
+            }
+        }
+    },
+    "destination": {
+        "account_info": {
+            "$ref": "file:///e:/moz-fx-dev-ekyle-treeherder-a838a7718652.json",
+            "type": "service_account",
+            "project_id": "moz-fx-dev-ekyle-treeherder",
+            "client_email": "test-treeherder-extract@moz-fx-dev-ekyle-treeherder.iam.gserviceaccount.com",
+            "client_id": "116659350535089980029",
+            "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+            "token_uri": "https://oauth2.googleapis.com/token",
+            "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
+            "client_x509_cert_url": "https://www.googleapis.com/robot/v1/metadata/x509/test-treeherder-extract%40moz-fx-dev-ekyle-treeherder.iam.gserviceaccount.com"
+        },
+        "dataset": {
+            "$ref": "env://NEW_RELIC_APP_NAME"
+        },
+        "table": "jobs",
+        "top_level_fields": {
+            "job.id": "_job_id",
+            "last_modified": "_last_modified",
+            "action.request_time": "_request_time"
+        },
+        "partition": {
+            "field": "action.request_time",
+            "expire": "2year"
+        },
+        "id":{
+            "field": "job.id",
+            "version": "last_modified"
+        },
+        "cluster": [
+            "job.id",
+            "last_modified"
+        ],
+        "sharded": true
+    },
+    "constants": {},
+    "debug": {
+        "trace": true,
+        "logs": [
+            {
+                "log_type": "logger",
+                "name": "extract_jobs"
+            }
+        ]
+    }
+}
