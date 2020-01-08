@@ -22,5 +22,7 @@ class Command(BaseCommand):
         )
 
     def handle(self, *args, **options):
-        force = options["force"]
-        ExtractJobs().run(force=force)
+        ExtractJobs().run(
+            force=options.get("force"),
+            restart=options.get("restart")
+        )

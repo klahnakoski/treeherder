@@ -28,6 +28,7 @@ class Partition(object):
         column = first(schema.leaves(field))
         if not column:
             Log.error("expecting {{field}} in schema for partitioning", field=field)
+
         self.field = column.es_column
         self.interval = Duration(interval)
         self.expire = Duration(expire)

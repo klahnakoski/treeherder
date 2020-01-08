@@ -75,6 +75,8 @@ class ApiName(object):
         Log.error("disabled")
 
     def __eq__(self, other):
+        if other == None:
+            return False
         if not isinstance(other, ApiName):
             Log.error("not alloweed")
         return self.values == other.values

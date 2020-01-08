@@ -41,7 +41,7 @@ class Snowflake(jx_base.Snowflake):
         self.lookup = lookup or {}
         self._columns = None
         self.top_level_fields = top_level_fields
-        self._top_level_fields = None
+        self._top_level_fields = None  # dict FROM FULL-API-NAME TO TOP-LEVEL-FIELD NAME
         self._es_type_info = Data()
         self._es_type_info[partition.field] = "TIMESTAMP"
         self.partition = partition
@@ -61,11 +61,19 @@ class Snowflake(jx_base.Snowflake):
             def parse_lookup(lookup, tops, es_type_info, jx_path, nested_path, es_path):
                 if is_text(lookup):
                     json_type = lookup
+                    expected_es_type = json_type_to_bq_type[json_type]
+                    if es_type_info and es_type_info != expected_es_type:
+                        Log.error(
+                            "expecting {{path}} to be of type {{expected_type}} not of type {{observed_type}}",
+                            path=jx_path,
+                            expected_type=expected_es_type,
+                            observed_type=es_type_info
+                        )
                     c = jx_base.Column(
                         name=join_field(jx_path),
                         es_column=coalesce(tops, text(es_path)),
                         es_index=self.es_index,
-                        es_type=coalesce(es_type_info, json_type_to_bq_type[json_type]),
+                        es_type=coalesce(es_type_info, expected_es_type),
                         jx_type=json_type,
                         nested_path=nested_path,
                         last_updated=now,
@@ -109,7 +117,7 @@ class Snowflake(jx_base.Snowflake):
                             )
                     if is_text(tops) and len(columns) > count + 1:
                         Log.error(
-                            "too many top level fields at {{field}}",
+                            "too many top level fields at {{field}}:",
                             field=join_field(jx_path),
                         )
 
@@ -184,14 +192,14 @@ class Snowflake(jx_base.Snowflake):
         # GRAB THE TOP-LEVEL FIELDS
         top_fields = [field for path, field in top_level_fields.leaves()]
         i = 0
-        while schema[i].name in top_fields:
+        while i<len(schema) and schema[i].name in top_fields:
             i = i + 1
 
+        output.top_level_fields = top_level_fields
         output.lookup = parse_schema(schema[i:], (), (".",), ())
 
-        # INSERT TOP-LEVEL FIELDS
+        # INSERT TOP-LEVEL FIELDS INTO THE loopkup
         lookup = wrap(output.lookup)
-
         for column in schema[:i]:
             path = first(
                 name
@@ -202,7 +210,6 @@ class Snowflake(jx_base.Snowflake):
             lookup[path] = OrderedDict(
                 [(json_type_to_inserter_type[json_type], json_type)]
             )
-            output.top_level_fields[path] = column.name
         return output
 
     def leaves(self, name):

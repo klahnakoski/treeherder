@@ -14,7 +14,7 @@ from jx_bigquery.sql import (
     sql_alias,
     escape_name,
     ApiName,
-)
+    sql_query)
 from jx_bigquery.typed_encoder import (
     NESTED_TYPE,
     typed_encode,
@@ -151,30 +151,21 @@ class Dataset(Container):
             Log.error("Can not create a table for read-only use")
 
         if sharded:
-            view_sql_name = quote_column(full_name)
             shard_name = escape_name(table + "_" + "".join(Random.sample(ALLOWED, 20)))
             shard_api_name = self.full_name + shard_name
             _shard = bigquery.Table(text(shard_api_name), schema=schema.to_bq_schema())
             _shard.time_partitioning = unwrap(schema._partition.bq_time_partitioning)
             _shard.clustering_fields = [
-                first(schema.leaves(f)).es_column
+                c.es_column
                 for f in listwrap(cluster)
-            ]
+                for c in [first(schema.leaves(f))]
+                if c
+            ] or None
             self.shard = self.client.create_table(_shard)
 
-            self.client.query(
-                ConcatSQL(
-                    (
-                        SQL("CREATE VIEW\n"),
-                        view_sql_name,
-                        SQL_AS,
-                        SQL_SELECT,
-                        SQL_STAR,
-                        SQL_FROM,
-                        quote_column(shard_api_name),
-                    )
-                ).sql
-            )
+            if lookup:
+                # ONLY MAKE THE VIEW IF THERE IS A SCHEMA
+                self.create_view(full_name, shard_api_name)
         else:
             _table = bigquery.Table(text(full_name), schema=schema.to_bq_schema())
             _table.time_partitioning = unwrap(schema._partition.bq_time_partitioning)
@@ -195,6 +186,17 @@ class Dataset(Container):
             container=self,
         )
 
+    def create_view(self, view_api_name, shard_api_name):
+        job = self.client.query(
+            ConcatSQL(
+                (
+                    SQL("CREATE VIEW\n"),
+                    quote_column(view_api_name),
+                    SQL_AS,
+                    sql_query({"from": shard_api_name})
+                )
+            ).sql
+        )
 
 class Table(Facts):
     @override
@@ -296,18 +298,24 @@ class Table(Facts):
                     ignore_unknown_values=False,
                 )
             if failures:
-                if all(r=="stopped" for r in wrap(failures).errors.reason):
+                if all(r == "stopped" for r in wrap(failures).errors.reason):
                     self._create_new_shard()
                     Log.note(
                         "STOPPED encountered: Added new shard with name: {{shard}}", shard=self.shard.table_id
                     )
-                Log.error("expecting no failures:\n{{failures|json}}", failures=failures)
+                Log.error("Got {{num}} failures:\n{{failures|json}}", num=len(failures), failures=failures[:5])
             else:
+                self.last_extend = Date.now()
                 Log.note("{{num}} rows added", num=len(output))
         except Exception as e:
+            e = Except.wrap(e)
+            if len(rows) > 1 and "Request payload size exceeds the limit" in e:
+                # TRY A SMALLER BATCH
+                cut = len(rows) // 2
+                self.extend(b"\n".join(rows[:cut]))
+                self.extend(b"\n".join(rows[cut:]))
+                return
             Log.error("Do not know how to handle", cause=e)
-        finally:
-            self.last_extend = Date.now()
 
     def add(self, row):
         self.extend([row])
@@ -453,19 +461,7 @@ class Table(Facts):
             self.container.client.delete_table(current_view)
 
         # CREATE NEW VIEW
-        self.container.client.query(
-            ConcatSQL(
-                (
-                    SQL("CREATE VIEW\n"),
-                    quote_column(view_full_name),
-                    SQL_AS,
-                    SQL_SELECT,
-                    SQL_STAR,
-                    SQL_FROM,
-                    quote_column(primary_full_name),
-                )
-            ).sql
-        )
+        self.container.create_view(view_full_name, primary_full_name)
 
     def condense(self):
         """

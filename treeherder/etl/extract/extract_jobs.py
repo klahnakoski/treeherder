@@ -16,7 +16,7 @@ _keep_import = VENDOR_PATH
 
 
 class ExtractJobs:
-    def run(self, force=False):
+    def run(self, force=False, restart=False):
         try:
             # SETUP LOGGING
             settings = startup.read_settings(filename=CONFIG_FILE)
@@ -30,7 +30,7 @@ class ExtractJobs:
             redis = Redis()
             state = redis.get(settings.extractor.key)
 
-            if not state:
+            if restart or not state:
                 state = (0, 0)
                 redis.set(settings.extractor.key, value2json(state).encode("utf8"))
             else:
@@ -107,10 +107,9 @@ class ExtractJobs:
                     value2json((last_modified, job_id)).encode("utf8"),
                 )
 
+                if len(acc) < settings.extractor.chunk_size:
+                    break
+
             Log.note("done job extraction")
         except Exception as e:
             Log.error("problem with extraction", cause=e)
-
-
-if __name__ == "__main__":
-    ExtractJobs().run()
