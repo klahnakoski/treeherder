@@ -32,7 +32,7 @@ from mo_dots import (
     startswith_field,
     listwrap,
 )
-from mo_future import text
+from mo_future import text, sort_using_key, first
 from mo_kwargs import override
 from mo_logs import Log, strings
 from mo_logs.exceptions import Explanation
@@ -68,16 +68,9 @@ class MySqlSnowflakeExtractor(object):
     def __init__(self, kwargs=None):
         self.settings = kwargs
         excludes = listwrap(self.settings.exclude)
-        self.settings.exclude = set(
-            e
-            for e in excludes
-            if len(split_field(e)) == 1
-        )
+        self.settings.exclude = set(e for e in excludes if len(split_field(e)) == 1)
         self.settings.exclude_columns = set(
-            p
-            for e in excludes
-            for p in [tuple(split_field(e))]
-            if len(p) > 1
+            p for e in excludes for p in [tuple(split_field(e))] if len(p) > 1
         )
         self.settings.exclude_path = list(
             map(split_field, listwrap(self.settings.exclude_path))
@@ -427,17 +420,20 @@ class MySqlSnowflakeExtractor(object):
 
             # INNER OBJECTS
             referenced_tables = list(
-                jx.groupby(
-                    jx.filter(
-                        relations,
-                        {
-                            "eq": {
-                                "table.name": position.name,
-                                "table.schema": position.schema,
-                            }
-                        },
+                sort_using_key(
+                    jx.groupby(
+                        jx.filter(
+                            relations,
+                            {
+                                "eq": {
+                                    "table.name": position.name,
+                                    "table.schema": position.schema,
+                                }
+                            },
+                        ),
+                        "constraint.name",
                     ),
-                    "constraint.name",
+                    key=lambda p: first(p[1]).column.name,
                 )
             )
             for g, constraint_columns in referenced_tables:
@@ -603,18 +599,28 @@ class MySqlSnowflakeExtractor(object):
 
             # NESTED OBJECTS
             if not no_nested_docs:
-                for g, constraint_columns in jx.groupby(
-                    jx.filter(
-                        relations,
-                        {
-                            "eq": {
-                                "referenced.table.name": position.name,
-                                "referenced.table.schema": position.schema,
-                            }
-                        },
-                    ),
-                    "constraint.name",
-                ):
+                nesting_tables = list(
+                    sort_using_key(
+                        jx.groupby(
+                            jx.filter(
+                                relations,
+                                {
+                                    "eq": {
+                                        "referenced.table.name": position.name,
+                                        "referenced.table.schema": position.schema,
+                                    }
+                                },
+                            ),
+                            "constraint.name",
+                        ),
+                        key=lambda p: [
+                            (r.table.name, r.column.name)
+                            for r in [first(p[1])]
+                        ][0],
+                    )
+                )
+
+                for g, constraint_columns in nesting_tables:
                     g = unwrap(g)
                     constraint_columns = deepcopy(constraint_columns)
                     if g["constraint.name"] in done_relations:
@@ -844,7 +850,10 @@ class MySqlSnowflakeExtractor(object):
             selects = []
             not_null_column_seen = False
             for ci, c in enumerate(self.columns):
-                if (c.column.table.name, c.column.column.name) in self.settings.exclude_columns:
+                if (
+                    c.column.table.name,
+                    c.column.column.name,
+                ) in self.settings.exclude_columns:
                     continue
                 if c.column_alias[1:] != text(ci):
                     Log.error("expecting consistency")
