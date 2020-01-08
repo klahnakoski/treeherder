@@ -9,7 +9,7 @@
 #
 from __future__ import absolute_import, division, unicode_literals
 
-from jx_sqlite.sqlite import quote_list
+from jx_bigquery.sql import quote_list
 
 from jx_base.expressions import InOp as InOp_
 from jx_base.language import is_op

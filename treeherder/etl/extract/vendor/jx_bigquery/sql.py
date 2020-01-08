@@ -39,6 +39,8 @@ from mo_sql import (
     SQL_AS)
 
 ALLOWED = string.ascii_letters + string.digits
+GUID = "_id"  # user accessible, unique value across many machines
+UID = "__id__"  # internal numeric id for single-database use
 
 
 def quote_column(name):
@@ -50,14 +52,16 @@ def quote_column(name):
 
 class ApiName(object):
     """
-    For calling BG API
+    REPRESENT NAMES FROM/TO THE BIGQUERY API
+    All names from the API should be wrapped with this
+    All names being sent to API should be of this type (name == text(ApiName(name))
     """
 
     __slots__ = ["values"]
 
     def __init__(self, *values):
         """
-        :param values:  API Names
+        :param values:  DOt-delimited API names
         """
         if any(not is_text(n) for n in values):
             Log.error("expecting strings")

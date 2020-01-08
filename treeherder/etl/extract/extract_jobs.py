@@ -18,20 +18,21 @@ _keep_import = VENDOR_PATH
 
 class ExtractJobs:
     def run(self, force=False, restart=False, merge=False):
+        # SETUP LOGGING
+        settings = startup.read_settings(filename=CONFIG_FILE)
+        constants.set(settings.constants)
+        Log.start(settings.debug)
+
+        if not settings.extractor.app_name:
+            Log.error("Expecting an extractor.app_name in config file")
+
+        # SETUP DESTINATION
+        destination = bigquery.Dataset(
+            dataset=settings.extractor.app_name, kwargs=settings.destination
+
+        ).get_or_create_table(settings.destination)
+
         try:
-            # SETUP LOGGING
-            settings = startup.read_settings(filename=CONFIG_FILE)
-            constants.set(settings.constants)
-            Log.start(settings.debug)
-
-            if not settings.extractor.app_name:
-                Log.error("Expecting an extractor.app_name in config file")
-
-            # SETUP DESTINATION
-            destination = bigquery.Dataset(
-                dataset=settings.extractor.app_name, kwargs=settings.destination
-            ).get_or_create_table(settings.destination)
-
             if merge:
                 with Timer("merge shards"):
                     destination.merge_shards()
@@ -52,7 +53,7 @@ class ExtractJobs:
             extractor = MySqlSnowflakeExtractor(settings.source)
             canonical_sql = extractor.get_sql(SQL("SELECT 0"))
 
-            # ENSURE PREVIOUS RUN DID NOT CHANGE ANYTHING
+            # ENSURE SCHEMA HAS NOT CHANGED SINCE LAST RUN
             old_sql = redis.get(settings.extractor.sql)
             if old_sql and old_sql.decode("utf8") != canonical_sql.sql:
                 if force:
@@ -115,9 +116,15 @@ class ExtractJobs:
                 if len(acc) < settings.extractor.chunk_size:
                     break
 
-            Log.note("done job extraction")
+        except Exception as e:
+            Log.warning("problem with extraction", cause=e)
 
+        Log.note("done job extraction")
+
+        try:
             with Timer("merge shards"):
                 destination.merge_shards()
         except Exception as e:
-            Log.error("problem with extraction", cause=e)
+            Log.warning("problem with merge", cause=e)
+
+        Log.note("done job merge")

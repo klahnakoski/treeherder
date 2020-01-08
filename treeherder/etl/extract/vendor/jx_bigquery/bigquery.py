@@ -5,7 +5,6 @@ from google.oauth2 import service_account
 
 from jx_base import Container, Facts
 from jx_bigquery import snowflakes
-from jx_bigquery.partitions import Partition
 from jx_bigquery.snowflakes import Snowflake
 from jx_bigquery.sql import (
     quote_column,
@@ -25,19 +24,14 @@ from jx_python import jx
 from mo_dots import (
     listwrap,
     unwrap,
-    split_field,
     join_field,
     Null,
-    unwraplist,
     is_data,
-    Data, coalesce, wrap)
+    Data, wrap)
 from mo_future import is_text, text, first
 from mo_kwargs import override
 from mo_logs import Log, Except
 from mo_math.randoms import Random
-from mo_threads import Till
-from mo_times import MINUTE, Timer
-from mo_times.dates import Date
 from mo_sql import (
     ConcatSQL,
     SQL,
@@ -51,10 +45,12 @@ from mo_sql import (
     SQL_CR,
     SQL_SELECT_AS_STRUCT,
     SQL_INSERT,
-    SQL_STAR,
     SQL_DESC,
     SQL_UNION_ALL,
 )
+from mo_threads import Till
+from mo_times import MINUTE, Timer
+from mo_times.dates import Date
 
 EXTEND_LIMIT = 2 * MINUTE  # EMIT ERROR IF ADDING RECORDS TO TABLE TOO OFTEN
 
