@@ -29,7 +29,7 @@ class Snowflake(jx_base.Snowflake):
     2. THE PARTITION FIELD MUST BE A TIMESTAMP, WHICH IS NOT A JSON TYPE
     """
 
-    def __init__(self, es_index, top_level_fields, partition, lookup=None):
+    def __init__(self, es_index, top_level_fields, partition, schema=None):
         """
         :param es_index:  NAME OF THE INDEX (FOR PROVIDING FULL COLUMN DETAILS)
         :param top_level_fields:  REQUIRED TO MAP INNER PROPERTIES TO THE TOP LEVEL, AS REQUIRED BY BQ FOR PARTITIONS AND CLUSTERING
@@ -38,7 +38,7 @@ class Snowflake(jx_base.Snowflake):
         if not is_text(es_index):
             Log.error("expecting string")
         self.es_index = es_index
-        self.lookup = lookup or {}
+        self.schema = schema or {}
         self._columns = None
         self.top_level_fields = top_level_fields
         self._top_level_fields = None  # dict FROM FULL-API-NAME TO TOP-LEVEL-FIELD NAME
@@ -58,9 +58,9 @@ class Snowflake(jx_base.Snowflake):
             now = Date.now()
             columns = []
 
-            def parse_lookup(lookup, tops, es_type_info, jx_path, nested_path, es_path):
-                if is_text(lookup):
-                    json_type = lookup
+            def parse_schema(schema, tops, es_type_info, jx_path, nested_path, es_path):
+                if is_text(schema):
+                    json_type = schema
                     expected_es_type = json_type_to_bq_type[json_type]
                     if es_type_info and es_type_info != expected_es_type:
                         Log.error(
@@ -91,10 +91,10 @@ class Snowflake(jx_base.Snowflake):
                     )
                     columns.append(c)
                     count = len(columns)
-                    for k, s in lookup.items():
+                    for k, s in schema.items():
                         if k == NESTED_TYPE:
                             c.jx_type = NESTED
-                            parse_lookup(
+                            parse_schema(
                                 s,
                                 tops if is_text(tops) else tops[k],
                                 es_type_info
@@ -105,7 +105,7 @@ class Snowflake(jx_base.Snowflake):
                                 es_path + escape_name(k),
                             )
                         else:
-                            parse_lookup(
+                            parse_schema(
                                 s,
                                 tops if is_text(tops) else tops[k],
                                 es_type_info
@@ -121,8 +121,8 @@ class Snowflake(jx_base.Snowflake):
                             field=join_field(jx_path),
                         )
 
-            parse_lookup(
-                self.lookup,
+            parse_schema(
+                self.schema,
                 self.top_level_fields,
                 self._es_type_info,
                 (),
@@ -145,7 +145,7 @@ class Snowflake(jx_base.Snowflake):
                     ".".join(map(text, map(escape_name, split_field(specific_path))))
                 ] = field
 
-            self._partition = Partition(kwargs=self.partition, schema=self)
+            self._partition = Partition(kwargs=self.partition, flake=self)
 
         return self._columns
 
@@ -196,10 +196,10 @@ class Snowflake(jx_base.Snowflake):
             i = i + 1
 
         output.top_level_fields = top_level_fields
-        output.lookup = parse_schema(schema[i:], (), (".",), ())
+        output.schema = parse_schema(schema[i:], (), (".",), ())
 
         # INSERT TOP-LEVEL FIELDS INTO THE loopkup
-        lookup = wrap(output.lookup)
+        schema = wrap(output.schema)
         for column in schema[:i]:
             path = first(
                 name
@@ -207,7 +207,7 @@ class Snowflake(jx_base.Snowflake):
                 if field == column.name
             )
             json_type = bq_type_to_json_type[column.field_type]
-            lookup[path] = OrderedDict(
+            schema[path] = OrderedDict(
                 [(json_type_to_inserter_type[json_type], json_type)]
             )
         return output
@@ -234,7 +234,7 @@ class Snowflake(jx_base.Snowflake):
                     return False
             return True
 
-        return identical_schema(self.lookup, other.lookup)
+        return identical_schema(self.schema, other.schema)
 
     def __or__(self, other):
         return merge(self, other)
@@ -281,10 +281,10 @@ class Snowflake(jx_base.Snowflake):
                     output.append(struct)
             return output
 
-        _ = self.columns  # ENSURE lookup HAS BEEN PROCESSED
-        if not self.lookup:
+        _ = self.columns  # ENSURE schema HAS BEEN PROCESSED
+        if not self.schema:
             return []
-        main_schema = _schema_to_bq_schema((), ApiName(), self.lookup)
+        main_schema = _schema_to_bq_schema((), ApiName(), self.schema)
         output = sort_using_key(top_fields, key=lambda v: v.name) + main_schema
         return output
 
@@ -313,5 +313,5 @@ def merge(schemas, es_index, top_level_fields, partition):
     output = Snowflake(
         es_index=es_index, top_level_fields=top_level_fields, partition=partition
     )
-    output.lookup = _merge(*(s.lookup for s in schemas))
+    output.schema = _merge(*(s.schema for s in schemas))
     return output

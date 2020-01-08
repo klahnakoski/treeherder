@@ -7,6 +7,7 @@ from mo_files import File
 from mo_json import json2value, value2json
 from mo_logs import Log, startup, constants
 from mo_sql import SQL
+from mo_times import Timer
 from mo_times.dates import parse
 from treeherder.etl.extract import VENDOR_PATH
 
@@ -16,7 +17,7 @@ _keep_import = VENDOR_PATH
 
 
 class ExtractJobs:
-    def run(self, force=False, restart=False):
+    def run(self, force=False, restart=False, merge=False):
         try:
             # SETUP LOGGING
             settings = startup.read_settings(filename=CONFIG_FILE)
@@ -25,6 +26,15 @@ class ExtractJobs:
 
             if not settings.extractor.app_name:
                 Log.error("Expecting an extractor.app_name in config file")
+
+            # SETUP DESTINATION
+            destination = bigquery.Dataset(
+                dataset=settings.extractor.app_name, kwargs=settings.destination
+            ).get_or_create_table(settings.destination)
+
+            if merge:
+                with Timer("merge shards"):
+                    destination.merge_shards()
 
             # RECOVER LAST SQL STATE
             redis = Redis()
@@ -53,11 +63,6 @@ class ExtractJobs:
 
             # SETUP SOURCE
             source = MySQL(settings.source.database)
-
-            # SETUP DESTINATION
-            destination = bigquery.Dataset(
-                dataset=settings.extractor.app_name, kwargs=settings.destination
-            ).get_or_create_table(settings.destination)
 
             while True:
                 Log.note(
@@ -111,5 +116,8 @@ class ExtractJobs:
                     break
 
             Log.note("done job extraction")
+
+            with Timer("merge shards"):
+                destination.merge_shards()
         except Exception as e:
             Log.error("problem with extraction", cause=e)

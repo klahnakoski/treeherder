@@ -21,23 +21,23 @@ TIMESTAMP_FORMAT = "%Y-%m-%d %H:%M:%S.%f"
 ALLOWED = string.ascii_letters + string.digits
 
 
-def typed_encode(value, schema):
+def typed_encode(value, flake):
     """
-    RETURN (typed_value, schema_update, added_nested) TUPLES
+    RETURN (typed_value, flake_update, added_nested) TUPLES
     :param value: THE RECORD TO CONVERT TO STRICT TYPED FORM
-    :param schema: LOOKUP SCHEMA, WILL BE UPDATED WITH CHANGES
+    :param flake: LOOKUP SCHEMA, WILL BE UPDATED WITH CHANGES
     :param top_level_fields: MAP TO TOP LEVEL FIELDS
     :return: (record, update, nested) TUPLE
     """
-    _ = schema.columns  # ENSURE WE HAVE INTERNAL STRUCTURES FILLED
-    output, update, nested = _typed_encode(value, schema.lookup)
+    _ = flake.columns  # ENSURE WE HAVE INTERNAL STRUCTURES FILLED
+    output, update, nested = _typed_encode(value, flake.schema)
     if update:
         # REFRESH COLUMNS
-        schema._columns = None
-        _ = schema.columns
+        flake._columns = None
+        _ = flake.columns
 
     worker = wrap(output)
-    for path, field in schema._top_level_fields.items():
+    for path, field in flake._top_level_fields.items():
         worker[field] = worker[path]
         worker[path] = None
 
@@ -53,17 +53,17 @@ def typed_encode(value, schema):
     return output, update, nested
 
 
-def _typed_encode(value, lookup):
+def _typed_encode(value, schema):
     if is_many(value):
         output = []
         update = {}
         nest_added = False
-        child_lookup = lookup.get(NESTED_TYPE)
-        if not child_lookup:
-            child_lookup = lookup[NESTED_TYPE] = {}
+        child_schema = schema.get(NESTED_TYPE)
+        if not child_schema:
+            child_schema = schema[NESTED_TYPE] = {}
 
         for r in value:
-            v, m, n = _typed_encode(r, child_lookup)
+            v, m, n = _typed_encode(r, child_schema)
             output.append(v)
             update.update(m)
             nest_added |= n
@@ -72,42 +72,42 @@ def _typed_encode(value, lookup):
             return {text(REPEATED): output}, {NESTED_TYPE: update}, True
         else:
             return {text(REPEATED): output}, None, nest_added
-    elif NESTED_TYPE in lookup:
+    elif NESTED_TYPE in schema:
         if not value:
             return {text(REPEATED): []}, None, False
         else:
-            return _typed_encode([value], lookup)
+            return _typed_encode([value], schema)
     elif is_data(value):
         output = {}
         update = {}
         nest_added = False
         for k, v in value.items():
-            child_lookup = lookup.get(k)
-            if not child_lookup:
-                child_lookup = lookup[k] = {}
-            result, more_update, n = _typed_encode(v, child_lookup)
+            child_schema = schema.get(k)
+            if not child_schema:
+                child_schema = schema[k] = {}
+            result, more_update, n = _typed_encode(v, child_schema)
             output[text(escape_name(k))] = result
             if more_update:
                 update.update({k: more_update})
                 nest_added |= n
         return output, update, nest_added
-    elif is_text(lookup):
+    elif is_text(schema):
         v, inserter_type, json_type = schema_type(value)
-        if lookup != json_type:
+        if schema != json_type:
             Log.error(
                 "Can not convert {{existing_type}} to {{expected_type}}",
                 existing_type=json_type,
-                expected_type=lookup,
+                expected_type=schema,
             )
         return v, None, False
     elif value is None:
-        return {text(escape_name(t)): None for t, child_schema in lookup}, None, False
+        return {text(escape_name(t)): None for t, child_schema in schema}, None, False
     else:
         v, inserter_type, json_type = schema_type(value)
-        child_lookup = lookup.get(inserter_type)
+        child_schema = schema.get(inserter_type)
         update = None
-        if not child_lookup:
-            if lookup.get(TIME_TYPE):
+        if not child_schema:
+            if schema.get(TIME_TYPE):
                 # ATTEMPT TO CONVERT TO TIME, IF EXPECTING TIME
                 try:
                     v = parse(v).format(TIMESTAMP_FORMAT)
@@ -115,7 +115,7 @@ def _typed_encode(value, lookup):
                 except Exception as e:
                     Log.warning("Failed attempt to convert {{value}} to TIMESTAMP string", value=v, cause=e)
 
-            lookup[inserter_type] = json_type
+            schema[inserter_type] = json_type
             update = {inserter_type: json_type}
         return {text(escape_name(inserter_type)): v}, update, False
 

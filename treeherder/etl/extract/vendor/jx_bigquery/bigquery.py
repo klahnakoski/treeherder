@@ -99,6 +99,8 @@ class Dataset(Container):
         id=None,
         kwargs=None,
     ):
+        if kwargs.lookup != None or kwargs.flake!=None:
+            Log.error("expecting schema, not lookup")
         try:
             return Table(kwargs=kwargs, container=self)
         except Exception as e:
@@ -119,6 +121,9 @@ class Dataset(Container):
         sharded=False,
         kwargs=None,
     ):
+        if kwargs.lookup != None or kwargs.flake!=None:
+            Log.error("expecting schema, not lookup")
+
         try:
             self.delete_table(table)
         except Exception as e:
@@ -135,7 +140,7 @@ class Dataset(Container):
     def create_table(
         self,
         table,
-        lookup=None,
+        schema=None,
         typed=True,
         read_only=True,  # TO PREVENT ACCIDENTAL WRITING
         sharded=False,
@@ -144,8 +149,10 @@ class Dataset(Container):
         top_level_fields=None,
         kwargs=None,
     ):
+        if kwargs.lookup != None or kwargs.flake!=None:
+            Log.error("expecting schema, not lookup")
         full_name = self.full_name + escape_name(table)
-        schema = Snowflake(text(full_name), top_level_fields, partition, lookup=lookup)
+        flake = Snowflake(text(full_name), top_level_fields, partition, schema=schema)
 
         if read_only:
             Log.error("Can not create a table for read-only use")
@@ -153,24 +160,24 @@ class Dataset(Container):
         if sharded:
             shard_name = escape_name(table + "_" + "".join(Random.sample(ALLOWED, 20)))
             shard_api_name = self.full_name + shard_name
-            _shard = bigquery.Table(text(shard_api_name), schema=schema.to_bq_schema())
-            _shard.time_partitioning = unwrap(schema._partition.bq_time_partitioning)
+            _shard = bigquery.Table(text(shard_api_name), schema=flake.to_bq_schema())
+            _shard.time_partitioning = unwrap(flake._partition.bq_time_partitioning)
             _shard.clustering_fields = [
                 c.es_column
                 for f in listwrap(cluster)
-                for c in [first(schema.leaves(f))]
+                for c in [first(flake.leaves(f))]
                 if c
             ] or None
             self.shard = self.client.create_table(_shard)
 
-            if lookup:
+            if schema:
                 # ONLY MAKE THE VIEW IF THERE IS A SCHEMA
                 self.create_view(full_name, shard_api_name)
         else:
-            _table = bigquery.Table(text(full_name), schema=schema.to_bq_schema())
-            _table.time_partitioning = unwrap(schema._partition.bq_time_partitioning)
+            _table = bigquery.Table(text(full_name), schema=flake.to_bq_schema())
+            _table.time_partitioning = unwrap(flake._partition.bq_time_partitioning)
             _table.clustering_fields = [
-                l.es_column for f in listwrap(cluster) for l in schema.leaves(f)
+                l.es_column for f in listwrap(cluster) for l in flake.leaves(f)
             ]
             self.client.create_table(_table)
             Log.note("created table {{table}}", table=_table.table_id)
@@ -187,7 +194,7 @@ class Dataset(Container):
         )
 
     def create_view(self, view_api_name, shard_api_name):
-        job = self.client.query(
+        job = self.query_and_wait(
             ConcatSQL(
                 (
                     SQL("CREATE VIEW\n"),
@@ -195,8 +202,17 @@ class Dataset(Container):
                     SQL_AS,
                     sql_query({"from": shard_api_name})
                 )
-            ).sql
+            )
         )
+
+    def query_and_wait(self, sql):
+        job = self.client.query(text(sql))
+        while job.state == "RUNNING":
+            Log.note("job {{id}} state = {{state}}", id=job.job_id, state=job.state)
+            Till(seconds=1).wait()
+            job = self.client.get_job(job.job_id)
+        return job
+
 
 class Table(Facts):
     @override
@@ -242,7 +258,7 @@ class Table(Facts):
             current_view = container.client.get_table(text(self.full_name))
             view_sql = current_view.view_query
             self.shard = container.client.get_table(text(container.full_name+_extract_primary_shard_name(view_sql)))
-        self._schema = Snowflake.parse(
+        self._flake = Snowflake.parse(
             alias_view.schema, text(self.full_name), self.top_level_fields, partition
         )
         self.partition = partition
@@ -250,14 +266,14 @@ class Table(Facts):
         self.last_extend = Date.now() - EXTEND_LIMIT
 
     @property
-    def schema(self):
-        return self._schema
+    def flake(self):
+        return self._flake
 
     def _create_new_shard(self):
         primary_shard = self.container.create_table(
             table=self.short_name + "_" + "".join(Random.sample(ALLOWED, 20)),
             sharded=False,
-            lookup=self._schema.lookup,
+            schema=self._flake.schema,
             kwargs=self.config,
         )
         self.shard = primary_shard.shard
@@ -272,7 +288,7 @@ class Table(Facts):
                 while True:
                     output = []
                     for rownum, row in enumerate(rows):
-                        typed, more, add_nested = typed_encode(row, self.schema)
+                        typed, more, add_nested = typed_encode(row, self.flake)
                         update.update(more)
                         if add_nested:
                             # row HAS NEW NESTED COLUMN!
@@ -345,7 +361,7 @@ class Table(Facts):
                 "expecting {{table}} to be a view pointing to a table", table=api_name
             )
 
-        shard_schemas = [
+        shard_flakes = [
             Snowflake.parse(
                 schema=shard.schema,
                 es_index=text(self.container.full_name + ApiName(shard.table_id)),
@@ -354,8 +370,8 @@ class Table(Facts):
             )
             for shard in shards
         ]
-        total_schema = snowflakes.merge(
-            shard_schemas,
+        total_flake = snowflakes.merge(
+            shard_flakes,
             es_index=text(self.full_name),
             top_level_fields=self.top_level_fields,
             partition=self.partition,
@@ -363,17 +379,17 @@ class Table(Facts):
 
         for i, s in enumerate(shards):
             if ApiName(s.table_id) == primary_shard_name:
-                if total_schema == shard_schemas[i]:
+                if total_flake == shard_flakes[i]:
                     # USE THE CURRENT PRIMARY SHARD AS A DESTINATION
                     del shards[i]
-                    del shard_schemas[i]
+                    del shard_flakes[i]
                     break
         else:
             name = self.short_name + "_" + "".join(Random.sample(ALLOWED, 20))
             primary_shard_name = escape_name(name)
             self.container.create_table(
                 table=name,
-                schema=total_schema,
+                schema=total_flake.schema,
                 sharded=False,
                 read_only=False,
                 kwargs=self.config,
@@ -382,13 +398,13 @@ class Table(Facts):
         primary_full_name = self.container.full_name + primary_shard_name
 
         selects = []
-        for schema, table in zip(shard_schemas, shards):
+        for flake, table in zip(shard_flakes, shards):
             q = ConcatSQL(
                 (
                     SQL_SELECT,
                     JoinSQL(
                         ConcatSQL((SQL_COMMA, SQL_CR)),
-                        gen_select(total_schema, schema),
+                        gen_select(total_flake, flake),
                     ),
                     SQL_FROM,
                     quote_column(ApiName(table.dataset_id, table.table_id)),
@@ -399,11 +415,11 @@ class Table(Facts):
         Log.note("inserting into table {{table}}", table=text(primary_shard_name))
         matched = []
         unmatched = []
-        for sel, shard, schema in zip(selects, shards, shard_schemas):
-            if schema == total_schema:
-                matched.append((sel, shard, schema))
+        for sel, shard, flake in zip(selects, shards, shard_flakes):
+            if flake == total_flake:
+                matched.append((sel, shard, flake))
             else:
-                unmatched.append((sel, shard, schema))
+                unmatched.append((sel, shard, flake))
 
         # EVERYTHING THAT IS IDENTICAL TO PRIMARY CAN BE MERGED IN A SINGLE QUERY
         if matched:
@@ -413,18 +429,14 @@ class Table(Facts):
                     quote_column(primary_full_name),
                     JoinSQL(
                         SQL_UNION_ALL,
-                        ConcatSQL(
-                            (SQL_SELECT, SQL_STAR, SQL_FROM, shard.full_name)
+                        (
+                            sql_query({"from": self.container.full_name + ApiName(shard.table_id)})
                             for _, shard, _ in matched
-                        ),
+                        )
                     ),
                 )
             )
-            job = self.container.client.query(command.sql)
-            while job.state == "RUNNING":
-                Log.note("job {{id}} state = {{state}}", id=job.job_id, state=job.state)
-                Till(seconds=1).wait()
-                job = self.container.client.get_job(job.job_id)
+            job = self.container.query_and_wait(command)
             Log.note("job {{id}} state = {{state}}", id=job.job_id, state=job.state)
 
             if job.errors:
@@ -439,11 +451,7 @@ class Table(Facts):
         # ALL OTHER SCHEMAS MISMATCH
         for s, shard, _ in unmatched:
             command = ConcatSQL((SQL_INSERT, quote_column(primary_full_name), s))
-            job = self.container.client.query(command.sql)
-            while job.state == "RUNNING":
-                Log.note("job {{id}} state = {{state}}", id=job.job_id, state=job.state)
-                Till(seconds=1).wait()
-                job = self.container.client.get_job(job.job_id)
+            job = self.container.query_and_wait(command)
             Log.note("job {{id}} state = {{state}}", id=job.job_id, state=job.state)
 
             if job.errors:
@@ -473,7 +481,7 @@ class Table(Facts):
             [
                 quote_column(c.es_field)
                 for f in listwrap(self.id.field)
-                for c in self.schema.leaves(f)
+                for c in self.flake.leaves(f)
             ],
         )
         order_by = JoinSQL(
@@ -481,12 +489,12 @@ class Table(Facts):
             [
                 ConcatSQL((quote_column(c.es_field), SQL_DESC))
                 for f in listwrap(self.id.version)
-                for c in self.schema.leaves(f)
+                for c in self.flake.leaves(f)
             ],
         )
         # WRAP WITH etl.timestamp BEST SELECTION
 
-        self.container.client.query(
+        self.container.query_and_wait(
             ConcatSQL(
                 (
                     SQL(
@@ -499,7 +507,7 @@ class Table(Facts):
                     quote_column(self.full_name),
                     SQL(") a WHERE _rank=1"),
                 )
-            ).sql
+            )
         )
 
 
@@ -511,20 +519,20 @@ def _extract_primary_shard_name(view_sql):
     )
 
 
-def gen_select(total_schema, schema):
+def gen_select(total_flake, flake):
 
-    def _gen_select(jx_path, es_path, total_tops, total_schema, source_tops, source_schema):
-        if total_schema == source_schema and total_tops == source_tops:
+    def _gen_select(jx_path, es_path, total_tops, total_flake, source_tops, source_flake):
+        if total_flake == source_flake and total_tops == source_tops:
             if not jx_path:  # TOP LEVEL FIELDS
-                return [quote_column(escape_name(k)) for k in total_schema.keys() if not is_text(total_tops[k])]
+                return [quote_column(escape_name(k)) for k in total_flake.keys() if not is_text(total_tops[k])]
             else:
                 Log.error("should not happen")
 
-        if NESTED_TYPE in total_schema:
+        if NESTED_TYPE in total_flake:
             k = NESTED_TYPE
             # PROMOTE EVERYTHING TO REPEATED
-            v = source_schema.get(k)
-            t = total_schema.get(k)
+            v = source_flake.get(k)
+            t = total_flake.get(k)
 
             if not v:
                 # CONVERT INNER OBJECT TO ARRAY OF ONE STRUCT
@@ -534,7 +542,7 @@ def gen_select(total_schema, schema):
                             SQL_SELECT_AS_STRUCT,
                             JoinSQL(
                                 ConcatSQL((SQL_COMMA, SQL_CR)),
-                                _gen_select(jx_path, es_path + REPEATED, Null, t, Null, source_schema),
+                                _gen_select(jx_path, es_path + REPEATED, Null, t, Null, source_flake),
                             ),
                         ]
                     )
@@ -550,7 +558,7 @@ def gen_select(total_schema, schema):
                                 ConcatSQL((SQL_COMMA, SQL_CR)), _gen_select([row_name], ApiName(row_name), Null, t, Null, v)
                             ),
                             SQL_FROM,
-                            sql_call("UNNEST", [es_path+escape_name(k)]),
+                            sql_call("UNNEST", [quote_column(es_path+escape_name(k))]),
                             SQL_AS,
                             SQL(row_name),
                             SQL(" WITH OFFSET AS "),
@@ -564,10 +572,10 @@ def gen_select(total_schema, schema):
             return [sql_alias(sql_call("ARRAY", inner), escape_name(k))]
 
         selection = []
-        for k, t in jx.sort(total_schema.items(), 0):
+        for k, t in jx.sort(total_flake.items(), 0):
             k_total_tops = total_tops if is_text(total_tops) else total_tops[k]
             k_tops = source_tops if is_text(source_tops) else source_tops[k]
-            v = source_schema.get(k)
+            v = source_flake.get(k)
             if is_text(k_total_tops):
                 # DO NOT INCLUDE TOP_LEVEL_FIELDS
                 pass
@@ -652,18 +660,18 @@ def gen_select(total_schema, schema):
                 Log.error("not expected")
         return selection
 
-    output = _gen_select([], ApiName(), total_schema.top_level_fields, total_schema.lookup, schema.top_level_fields, schema.lookup)
+    output = _gen_select([], ApiName(), total_flake.top_level_fields, total_flake.schema, flake.top_level_fields, flake.schema)
     tops = []
-    as_timestamp = first(schema.leaves(total_schema.partition.field))  # PARTITION FIELD IS A TIMESTAMP
+    as_timestamp = first(flake.leaves(total_flake.partition.field))  # PARTITION FIELD IS A TIMESTAMP
 
-    for path, name in total_schema.top_level_fields.leaves():
-        source = schema.top_level_fields[path]
+    for path, name in total_flake.top_level_fields.leaves():
+        source = flake.top_level_fields[path]
         if source:
             # ALREADY TOP LEVEL FIELD
             source = SQL(source)
         else:
             # PULL OUT TOP LEVEL FIELD
-            column = first(schema.leaves(path))
+            column = first(flake.leaves(path))
             if column is as_timestamp:
                 source = ConcatSQL((
                     SQL("TIMESTAMP_MILLIS(CAST("),
