@@ -3,12 +3,12 @@
         "app_name": {
             "$ref": "env://NEW_RELIC_APP_NAME"
         },
-        "key": "treeherder.etl.extract.job.state",
-        "sql": "treeherder.etl.extract.job.sql",
+        "key": "treeherder.etl.extract.perf.state",
+        "sql": "treeherder.etl.extract.perf.sql",
         "chunk_size": 1000
     },
     "source": {
-        "fact_table": "job",
+        "fact_table": "performance_datum",
         "show_foreign_keys": false,
         "null_values": [
             "-",
@@ -16,35 +16,31 @@
             ""
         ],
         "add_relations": [
-            "treeherder.performance_datum.ds_job_id -> treeherder.job.project_specific_id",
-            "treeherder.performance_datum.repository_id -> treeherder.job.repository_id",
-            "treeherder.job.option_collection_hash -> treeherder.option_collection.option_collection_hash",
-            "treeherder.job.failure_classification_id -> treeherder.failure_classification.id",
-            "treeherder.job.autoclassify_status -> treeherder.failure_classification.id"
         ],
         "include": [
         ],
         "exclude": [
-            "auth_user",
-            "group_failure_lines",
-            "commit",
-            "performance_datum",
-            "performance_alert_summary",
-            "performance_signature",
             "runnable_job",
-            "text_log_error_metadata",
-            "failure_line.stackwalk_stdout",
-            "failure_line.stackwalk_stderr"
+            "auth_user",
+            "job_log",
+            "text_log_step",
+            "performance_alert_summary",
+            "text_log_step",
+            "failure_line",
+            "job_note",
+        ],
+        "exclude_path": [
+            "id.signature.parent_signature",
+            "id.signature.performance_alert",
         ],
         "reference_only": [
-            "classified_failure",
-            "failure_classification.name",
-            "job_group",
-            "machine_platform.platform",
-            "matcher.name",
-            "option.name",
+            "performance_framework.name",
+            "user.email",
             "repository.name",
-            "user.email"
+            "machine_platform.platform",
+            "failure_classification.name",
+            "option.name",
+            "push"
         ],
         "database": {
             "debug": false,
@@ -74,25 +70,15 @@
         "dataset": {
             "$ref": "env://NEW_RELIC_APP_NAME"
         },
-        "table": "jobs",
+        "table": "perf",
         "top_level_fields": {
-        },
-        "partition": {
-            "field": "submit_time",
-            "expire": "2year"
         },
         "id":{
             "field": "id",
-            "version": "last_modified"
+            "version": "job.submit_time"
         },
-        "cluster": [
-            "id",
-            "last_modified"
-        ],
         "schema": {
-            "id": "number",
-            "submit_time": "time",
-            "last_modified": "time"
+            "id": "integer"
         },
         "sharded": true
     },
@@ -104,7 +90,7 @@
         "logs": [
             {
                 "log_type": "logger",
-                "name": "extract_jobs"
+                "name": "extract_perf"
             }
         ]
     }

@@ -140,7 +140,7 @@ class Dataset(Container):
         typed=True,
         read_only=True,  # TO PREVENT ACCIDENTAL WRITING
         sharded=False,
-        partition=None,  # PARTITION RULES
+        partition=Null,  # PARTITION RULES
         cluster=None,  # TUPLE OF FIELDS TO SORT DATA
         top_level_fields=None,
         kwargs=None,
@@ -174,7 +174,7 @@ class Dataset(Container):
             _table.time_partitioning = unwrap(flake._partition.bq_time_partitioning)
             _table.clustering_fields = [
                 l.es_column for f in listwrap(cluster) for l in flake.leaves(f)
-            ]
+            ] or None
             self.client.create_table(_table)
             Log.note("created table {{table}}", table=_table.table_id)
 
@@ -253,7 +253,11 @@ class Table(Facts):
                 Log.error("Sharded tables require a view")
             current_view = container.client.get_table(text(self.full_name))
             view_sql = current_view.view_query
-            self.shard = container.client.get_table(text(container.full_name+_extract_primary_shard_name(view_sql)))
+            try:
+                self.shard = container.client.get_table(text(container.full_name+_extract_primary_shard_name(view_sql)))
+            except Exception as e:
+                Log.warning("view is invalid", cause=e)
+
         self._flake = Snowflake.parse(
             alias_view.schema, text(self.full_name), self.top_level_fields, partition
         )
@@ -359,7 +363,7 @@ class Table(Facts):
 
         shard_flakes = [
             Snowflake.parse(
-                schema=shard.schema,
+                big_query_schema=shard.schema,
                 es_index=text(self.container.full_name + ApiName(shard.table_id)),
                 top_level_fields=self.top_level_fields,
                 partition=self.partition,

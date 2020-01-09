@@ -131,16 +131,19 @@ def schema_type(value):
 
 json_type_to_bq_type = {
     BOOLEAN: "BOOLEAN",
-    NUMBER: "NUMERIC",
+    NUMBER: "FLOAT64",
+    INTEGER: "INT64",
     TIME: "TIMESTAMP",
-    INTERVAL: "NUMERIC",
+    INTERVAL: "FLOAT64",
     STRING: "STRING",
     NESTED: "RECORD",
 }
 
 bq_type_to_json_type = {
-    "INT64": NUMBER,
+    "INTEGER": INTEGER,
+    "INT64": INTEGER,
     "FLOAT64": NUMBER,
+    "FLOAT": NUMBER,
     "NUMERIC": NUMBER,
     "BOOL": BOOLEAN,
     "STRING": STRING,
@@ -153,6 +156,7 @@ bq_type_to_json_type = {
 }
 
 BOOLEAN_TYPE = "_b_"
+INTEGER_TYPE = "_i_"
 NUMBER_TYPE = "_n_"
 TIME_TYPE = "_t_"
 STRING_TYPE = "_s_"
@@ -160,7 +164,7 @@ NESTED_TYPE = "_a_"
 
 json_type_to_inserter_type = {
     BOOLEAN: BOOLEAN_TYPE,
-    INTEGER: NUMBER_TYPE,
+    INTEGER: INTEGER_TYPE,
     NUMBER: NUMBER_TYPE,
     TIME: TIME_TYPE,
     INTERVAL: NUMBER_TYPE,
@@ -170,7 +174,7 @@ json_type_to_inserter_type = {
 
 typed_to_bq_type = {
     BOOLEAN_TYPE: {"field_type": "BOOLEAN", "mode": "NULLABLE"},
-    NUMBER_TYPE: {"field_type": "NUMERIC", "mode": "NULLABLE"},
+    NUMBER_TYPE: {"field_type": "FLOAT64", "mode": "NULLABLE"},
     TIME_TYPE: {"field_type": "TIMESTAMP", "mode": "NULLABLE"},
     STRING_TYPE: {"field_type": "STRING", "mode": "NULLABLE"},
     NESTED_TYPE: {"field_type": "RECORD", "mode": "REPEATED"},

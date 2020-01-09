@@ -11,12 +11,12 @@ from mo_times import Timer
 from mo_times.dates import parse
 from treeherder.etl.extract import VENDOR_PATH
 
-CONFIG_FILE = (File.new_instance(__file__).parent / "extract_jobs.json").abspath
+CONFIG_FILE = (File.new_instance(__file__).parent / "extract_perf.json").abspath
 
 _keep_import = VENDOR_PATH
 
 
-class ExtractJobs:
+class ExtractPerf:
     def run(self, force=False, restart=False, merge=False):
         # SETUP LOGGING
         settings = startup.read_settings(filename=CONFIG_FILE)
@@ -42,12 +42,12 @@ class ExtractJobs:
             state = redis.get(settings.extractor.key)
 
             if restart or not state:
-                state = (0, 0)
+                state = 0
                 redis.set(settings.extractor.key, value2json(state).encode("utf8"))
             else:
                 state = json2value(state.decode("utf8"))
 
-            last_modified, job_id = state
+            perf_id = state
 
             # SCAN SCHEMA, GENERATE EXTRACTION SQL
             extractor = MySqlSnowflakeExtractor(settings.source)
@@ -67,29 +67,18 @@ class ExtractJobs:
 
             while True:
                 Log.note(
-                    "Extracting jobs for last_modified={{last_modified|datetime|quote}}, job.id={{job_id}}",
-                    last_modified=last_modified,
-                    job_id=job_id,
+                    "Extracting perfs for perf.id={{perf_id}}",
+                    perf_id=perf_id,
                 )
 
-                # Example: job.id ==283890114
+                # Example: perf.id ==283890114
                 # get_ids = ConcatSQL((SQL_SELECT, sql_alias(quote_value(283890114), "id")))
                 get_ids = sql_query(
                     {
-                        "from": "job",
+                        "from": "performance_datum",
                         "select": ["id"],
-                        "where": {
-                            "or": [
-                                {"gt": {"last_modified": parse(last_modified)}},
-                                {
-                                    "and": [
-                                        {"eq": {"last_modified": parse(last_modified)}},
-                                        {"gt": {"id": job_id}},
-                                    ]
-                                },
-                            ]
-                        },
-                        "sort": ["last_modified", "id"],
+                        "where": {"gt": {"id": perf_id}},
+                        "sort": ["id"],
                         "limit": settings.extractor.chunk_size,
                     }
                 )
@@ -103,14 +92,21 @@ class ExtractJobs:
                     extractor.construct_docs(cursor, acc.append, False)
                 if not acc:
                     break
+
+                # TODO: Remove me July 2021
+                # OLD PERF RECORDS HAVE NO CORRESPONDING JOB
+                # ADD job.submit_time FOR PARTITIONING
+                for a in acc:
+                    if not a.job.submit_time:
+                        a.job.submit_time = a.push_timestamp
                 destination.extend(acc)
 
                 # RECORD THE STATE
                 last_doc = acc[-1]
-                last_modified, job_id = last_doc.last_modified, last_doc.id
+                perf_id = last_doc.id
                 redis.set(
                     settings.extractor.key,
-                    value2json((last_modified, job_id)).encode("utf8"),
+                    value2json(perf_id).encode("utf8"),
                 )
 
                 if len(acc) < settings.extractor.chunk_size:
@@ -119,7 +115,7 @@ class ExtractJobs:
         except Exception as e:
             Log.warning("problem with extraction", cause=e)
 
-        Log.note("done job extraction")
+        Log.note("done perf extraction")
 
         try:
             with Timer("merge shards"):
@@ -127,4 +123,4 @@ class ExtractJobs:
         except Exception as e:
             Log.warning("problem with merge", cause=e)
 
-        Log.note("done job merge")
+        Log.note("done perf merge")

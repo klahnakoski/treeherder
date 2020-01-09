@@ -1,11 +1,11 @@
 from django.core.management.base import BaseCommand
 
-from treeherder.etl.extract.extract_jobs import ExtractJobs
+from treeherder.etl.extract.extract_perf import ExtractPerf
 
 
 class Command(BaseCommand):
     """Management command to extract jobs"""
-    help = "Extract recently performance from Treeherder, and push them to BigQuery"
+    help = "Extract recently changed jobs from Treeherder, and push them to BigQuery"
 
     def add_arguments(self, parser):
         parser.add_argument(
@@ -28,7 +28,7 @@ class Command(BaseCommand):
         )
 
     def handle(self, *args, **options):
-        ExtractJobs().run(
+        ExtractPerf().run(
             force=options.get("force"),
             restart=options.get("restart"),
             merge=options.get("merge")

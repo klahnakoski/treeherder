@@ -381,7 +381,7 @@ def datetime2unix(d):
 
 
 python_type_to_json_type = {
-    int: NUMBER,
+    int: INTEGER,
     text: STRING,
     float: NUMBER,
     bool: BOOLEAN,
@@ -401,7 +401,7 @@ python_type_to_json_type = {
 
 if PY2:
     python_type_to_json_type[str] = STRING
-    python_type_to_json_type[long] = NUMBER
+    python_type_to_json_type[long] = INTEGER
 
 for k, v in items(python_type_to_json_type):
     python_type_to_json_type[k.__name__] = v
