@@ -90,7 +90,7 @@
             "last_modified"
         ],
         "schema": {
-            "id": "number",
+            "id": "integer",
             "submit_time": "time",
             "last_modified": "time"
         },

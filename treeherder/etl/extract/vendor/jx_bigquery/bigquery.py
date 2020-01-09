@@ -244,10 +244,16 @@ class Table(Facts):
         esc_name = escape_name(table)
         self.full_name = container.full_name + esc_name
         self.alias_view = alias_view = container.client.get_table(text(self.full_name))
+        self.partition = partition
+        self.container = container
+
         if not sharded:
             if not read_only and alias_view.table_type == "VIEW":
                 Log.error("Expecting a table, not a view")
             self.shard = alias_view
+            self._flake = Snowflake.parse(
+                alias_view.schema, text(self.full_name), self.top_level_fields, partition
+            )
         else:
             if alias_view.table_type != "VIEW":
                 Log.error("Sharded tables require a view")
@@ -255,14 +261,17 @@ class Table(Facts):
             view_sql = current_view.view_query
             try:
                 self.shard = container.client.get_table(text(container.full_name+_extract_primary_shard_name(view_sql)))
+                self._flake = Snowflake.parse(
+                    alias_view.schema, text(self.full_name), self.top_level_fields, partition
+                )
             except Exception as e:
                 Log.warning("view is invalid", cause=e)
+                self._flake = Snowflake.parse(
+                    alias_view.schema, text(self.full_name), self.top_level_fields, partition
+                )
+                self._create_new_shard()
+                container.create_view(self.full_name, ApiName(self.shard.table_id))
 
-        self._flake = Snowflake.parse(
-            alias_view.schema, text(self.full_name), self.top_level_fields, partition
-        )
-        self.partition = partition
-        self.container = container
         self.last_extend = Date.now() - EXTEND_LIMIT
 
     @property
@@ -328,8 +337,8 @@ class Table(Facts):
             if len(rows) > 1 and "Request payload size exceeds the limit" in e:
                 # TRY A SMALLER BATCH
                 cut = len(rows) // 2
-                self.extend(b"\n".join(rows[:cut]))
-                self.extend(b"\n".join(rows[cut:]))
+                self.extend(rows[:cut])
+                self.extend(rows[cut:])
                 return
             Log.error("Do not know how to handle", cause=e)
 

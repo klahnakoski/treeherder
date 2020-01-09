@@ -8,7 +8,6 @@ from mo_json import json2value, value2json
 from mo_logs import Log, startup, constants
 from mo_sql import SQL
 from mo_times import Timer
-from mo_times.dates import parse
 from treeherder.etl.extract import VENDOR_PATH
 
 CONFIG_FILE = (File.new_instance(__file__).parent / "extract_perf.json").abspath
@@ -42,7 +41,7 @@ class ExtractPerf:
             state = redis.get(settings.extractor.key)
 
             if restart or not state:
-                state = 0
+                state = 916850000
                 redis.set(settings.extractor.key, value2json(state).encode("utf8"))
             else:
                 state = json2value(state.decode("utf8"))
