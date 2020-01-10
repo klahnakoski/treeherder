@@ -1,7 +1,6 @@
 import string
-from datetime import datetime
 
-from jx_bigquery.sql import escape_name
+from jx_bigquery.sql import escape_name, TIMESTAMP_FORMAT
 from jx_python import jx
 from mo_dots import is_many, is_data, wrap, split_field, join_field
 from mo_future import is_text, text
@@ -17,7 +16,6 @@ from mo_json import (
 from mo_logs import Log
 from mo_times.dates import parse
 
-TIMESTAMP_FORMAT = "%Y-%m-%d %H:%M:%S.%f"
 ALLOWED = string.ascii_letters + string.digits
 
 

@@ -38,7 +38,9 @@ from mo_sql import (
     SQL_LT,
     SQL_AS,
 )
+from mo_times.dates import parse
 
+TIMESTAMP_FORMAT = "%Y-%m-%d %H:%M:%S.%f"
 ALLOWED = string.ascii_letters + string.digits
 GUID = "_id"  # user accessible, unique value across many machines
 UID = "__id__"  # internal numeric id for single-database use
@@ -139,7 +141,7 @@ def quote_value(value):
     if isinstance(value, (Mapping, list)):
         return SQL(".")
     elif isinstance(value, Date):
-        return SQL(text(value.unix))
+        return quote_value(value.format(TIMESTAMP_FORMAT))
     elif isinstance(value, Duration):
         return SQL(text(value.seconds))
     elif is_text(value):

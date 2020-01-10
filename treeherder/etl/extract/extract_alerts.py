@@ -1,21 +1,22 @@
 from redis import Redis
 
 from jx_bigquery import bigquery
-from jx_mysql.mysql import sql_query, MySQL
+from jx_mysql.mysql import MySQL, quote_value
 from jx_mysql.mysql_snowflake_extractor import MySqlSnowflakeExtractor
 from mo_files import File
 from mo_json import json2value, value2json
 from mo_logs import Log, startup, constants
 from mo_sql import SQL
-from mo_times import Timer
+from mo_times import Timer, DAY, YEAR
+from mo_times.dates import parse, Date
 from treeherder.etl.extract import VENDOR_PATH
 
-CONFIG_FILE = (File.new_instance(__file__).parent / "extract_perf.json").abspath
+CONFIG_FILE = (File.new_instance(__file__).parent / "extract_alerts.json").abspath
 
 _keep_import = VENDOR_PATH
 
 
-class ExtractPerf:
+class ExtractAlerts:
     def run(self, force=False, restart=False, merge=False):
         # SETUP LOGGING
         settings = startup.read_settings(filename=CONFIG_FILE)
@@ -27,8 +28,7 @@ class ExtractPerf:
 
         # SETUP DESTINATION
         destination = bigquery.Dataset(
-            dataset=settings.extractor.app_name,
-            kwargs=settings.destination
+            dataset=settings.extractor.app_name, kwargs=settings.destination
         ).get_or_create_table(settings.destination)
 
         try:
@@ -41,12 +41,13 @@ class ExtractPerf:
             state = redis.get(settings.extractor.key)
 
             if restart or not state:
-                state = 916850000
+                state = (0, 0)
                 redis.set(settings.extractor.key, value2json(state).encode("utf8"))
             else:
                 state = json2value(state.decode("utf8"))
 
-            perf_id = state
+            last_modified, alert_id = state
+            last_modified = parse(last_modified)
 
             # SCAN SCHEMA, GENERATE EXTRACTION SQL
             extractor = MySqlSnowflakeExtractor(settings.source)
@@ -66,44 +67,42 @@ class ExtractPerf:
 
             while True:
                 Log.note(
-                    "Extracting perfs for perf.id={{perf_id}}",
-                    perf_id=perf_id,
+                    "Extracting alerts for last_modified={{last_modified|datetime|quote}}, alert.id={{alert_id}}",
+                    last_modified=last_modified,
+                    alert_id=alert_id,
                 )
-
-                get_ids = sql_query(
-                    {
-                        "from": "performance_datum",
-                        "select": ["id"],
-                        "where": {"gt": {"id": perf_id}},
-                        "sort": ["id"],
-                        "limit": settings.extractor.chunk_size,
-                    }
+                last_year = Date.today() - (364 * DAY)  # ONLY YOUNG RECORDS CAN GO INTO BIGQUERY
+                get_ids = SQL(
+                    "SELECT s.id "
+                    + "\nFROM treeherder.performance_alert_summary s"
+                    + "\nLEFT JOIN treeherder.performance_alert a ON s.id=a.summary_id"
+                    + "\nWHERE s.created>"+quote_value(last_year).sql+" AND (s.last_updated > "
+                    + quote_value(last_modified).sql
+                    + "\nOR a.last_updated > "
+                    + quote_value(last_modified).sql+")"
+                    + "\nGROUP BY s.id"
+                    + "\nORDER BY s.id"
+                    + "\nLIMIT "
+                    + quote_value(settings.extractor.chunk_size).sql
                 )
 
                 sql = extractor.get_sql(get_ids)
 
                 # PULL FROM source, AND PUSH TO destination
                 acc = []
-                with source.transaction() as t:
+                with source.transaction():
                     cursor = source.query(sql, stream=True, row_tuples=True)
                     extractor.construct_docs(cursor, acc.append, False)
                 if not acc:
                     break
-
-                # TODO: Remove me July 2021
-                # OLD PERF RECORDS HAVE NO CORRESPONDING JOB
-                # ADD job.submit_time FOR PARTITIONING
-                for a in acc:
-                    if not a.job.submit_time:
-                        a.job.submit_time = a.push_timestamp
                 destination.extend(acc)
 
                 # RECORD THE STATE
                 last_doc = acc[-1]
-                perf_id = last_doc.id
+                last_modified, alert_id = last_doc.created, last_doc.id
                 redis.set(
                     settings.extractor.key,
-                    value2json(perf_id).encode("utf8"),
+                    value2json((last_modified, alert_id)).encode("utf8"),
                 )
 
                 if len(acc) < settings.extractor.chunk_size:
@@ -112,7 +111,7 @@ class ExtractPerf:
         except Exception as e:
             Log.warning("problem with extraction", cause=e)
 
-        Log.note("done perf extraction")
+        Log.note("done alert extraction")
 
         try:
             with Timer("merge shards"):
@@ -120,4 +119,4 @@ class ExtractPerf:
         except Exception as e:
             Log.warning("problem with merge", cause=e)
 
-        Log.note("done perf merge")
+        Log.note("done alert merge")

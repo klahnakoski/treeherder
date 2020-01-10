@@ -1,11 +1,11 @@
 from django.core.management.base import BaseCommand
 
-from treeherder.etl.extract.extract_jobs import ExtractJobs
+from treeherder.etl.extract.extract_alerts import ExtractAlerts
 
 
 class Command(BaseCommand):
-    """Management command to extract jobs"""
-    help = "Extract recent jobs from Treeherder, and push them to BigQuery"
+    """Management command to extract alertss"""
+    help = "Extract recentl alerts from Treeherder, and push them to BigQuery"
 
     def add_arguments(self, parser):
         parser.add_argument(
@@ -28,7 +28,7 @@ class Command(BaseCommand):
         )
 
     def handle(self, *args, **options):
-        ExtractJobs().run(
+        ExtractAlerts().run(
             force=options.get("force"),
             restart=options.get("restart"),
             merge=options.get("merge")

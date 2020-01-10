@@ -3,12 +3,12 @@
         "app_name": {
             "$ref": "env://NEW_RELIC_APP_NAME"
         },
-        "key": "treeherder.etl.extract.perf.state",
-        "sql": "treeherder.etl.extract.perf.sql",
-        "chunk_size": 4000
+        "key": "treeherder.etl.extract.alert.state",
+        "sql": "treeherder.etl.extract.alert.sql",
+        "chunk_size": 500
     },
     "source": {
-        "fact_table": "performance_datum",
+        "fact_table": "performance_alert_summary",
         "show_foreign_keys": false,
         "null_values": [
             "-",
@@ -17,31 +17,35 @@
         ],
         "add_relations": [
         ],
+        "name_relations": {
+            "performance_alert_summary\\.id <- performance_alert\\.summary_id": "details",
+            "performance_alert_summary\\.id <- performance_alert\\.related_summary_id": "see_also"
+        },
         "include": [
         ],
         "exclude": [
-            "runnable_job",
             "auth_user",
-            "job_log",
-            "text_log_step",
-            "performance_alert_summary",
-            "text_log_step",
-            "failure_line",
-            "job_note",
-            "job_detail"
+            "group_failure_lines",
+            "commit",
+            "runnable_job",
+            "text_log_error_metadata",
+            "failure_line.stackwalk_stdout",
+            "failure_line.stackwalk_stderr"
         ],
         "exclude_path": [
-            "id.signature.parent_signature",
-            "id.signature.performance_alert",
         ],
         "reference_only": [
+            "performance_signature",
+            "push",
+            "classified_failure",
             "performance_framework.name",
-            "user.email",
-            "repository.name",
-            "machine_platform.platform",
             "failure_classification.name",
+            "job_group",
+            "machine_platform.platform",
+            "matcher.name",
             "option.name",
-            "push"
+            "repository.name",
+            "user.email"
         ],
         "database": {
             "debug": false,
@@ -71,12 +75,12 @@
         "dataset": {
             "$ref": "env://NEW_RELIC_APP_NAME"
         },
-        "table": "perf",
+        "table": "alerts",
         "top_level_fields": {
         },
         "id":{
             "field": "id",
-            "version": "job.submit_time"
+            "version": "last_updated"
         },
         "schema": {
             "id": "integer"
@@ -91,7 +95,7 @@
         "logs": [
             {
                 "log_type": "logger",
-                "name": "extract_perf"
+                "name": "extract_alerts"
             }
         ]
     }
