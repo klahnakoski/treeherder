@@ -15,10 +15,8 @@
             "unknown",
             ""
         ],
-        "add_relations": [
-        ],
-        "include": [
-        ],
+        "add_relations": [],
+        "include": [],
         "exclude": [
             "runnable_job",
             "auth_user",
@@ -32,7 +30,7 @@
         ],
         "exclude_path": [
             "id.signature.parent_signature",
-            "id.signature.performance_alert",
+            "id.signature.performance_alert"
         ],
         "reference_only": [
             "performance_framework.name",
@@ -46,19 +44,22 @@
         "database": {
             "debug": false,
             "schema": "treeherder",
-            "$ref": "~/private.json#treeherder",
-
-//            "ssl": {
-//                "ca": "https://s3.amazonaws.com/rds-downloads/rds-combined-ca-bundle.pem"
-//            },
-//            "host": {
-//                "$ref": "env://DATABASE_URL"
-//            }
+            "ssl": {
+                "ca": "https://s3.amazonaws.com/rds-downloads/rds-combined-ca-bundle.pem"
+            },
+            "host": {
+                "$ref": "env://DATABASE_URL"
+            }
         }
     },
     "destination": {
         "account_info": {
-            "$ref": "file:///e:/moz-fx-dev-ekyle-treeherder-a838a7718652.json",
+            "private_key_id": {
+                "$ref": "env://BIGQUERY_PRIVATE_KEY_ID"
+            },
+            "private_key": {
+                "$ref": "env://BIGQUERY_PRIVATE_KEY"
+            },
             "type": "service_account",
             "project_id": "moz-fx-dev-ekyle-treeherder",
             "client_email": "test-treeherder-extract@moz-fx-dev-ekyle-treeherder.iam.gserviceaccount.com",
@@ -72,9 +73,8 @@
             "$ref": "env://NEW_RELIC_APP_NAME"
         },
         "table": "perf",
-        "top_level_fields": {
-        },
-        "id":{
+        "top_level_fields": {},
+        "id": {
             "field": "id",
             "version": "job.submit_time"
         },
@@ -84,7 +84,9 @@
         "sharded": true
     },
     "constants": {
-        "pyLibrary.env.http.default_headers": {"Referer": "https://github.com/mozilla/treeherder"}
+        "pyLibrary.env.http.default_headers": {
+            "Referer": "https://github.com/mozilla/treeherder"
+        }
     },
     "debug": {
         "trace": true,
