@@ -29,7 +29,7 @@ boolean_type = type(True)
 if PY3:
     import itertools
     import collections
-    from collections import Callable
+    from collections.abc import Callable, Iterable, Mapping, Set
     from functools import cmp_to_key, reduce, update_wrapper
     from configparser import ConfigParser
     from itertools import zip_longest
@@ -57,7 +57,9 @@ if PY3:
         type(filter(lambda x: True, [])),
         type({}.items()),
         type({}.values()),
-        type(map(lambda: 0, []))
+        type(map(lambda: 0, [])),
+        type(reversed([])),
+        type(sorted([]))
     )
     unichr = chr
 
@@ -122,7 +124,7 @@ if PY3:
 
 else:
     import collections
-    from collections import Callable
+    from collections import Callable, Iterable, Mapping, Set
     from functools import cmp_to_key, reduce, update_wrapper
 
     import __builtin__
@@ -144,7 +146,7 @@ else:
     unichr = __builtin__.unichr
 
     xrange = __builtin__.xrange
-    generator_types = (GeneratorType,)
+    generator_types = (GeneratorType, type(reversed([])))
     unichr = __builtin__.unichr
 
     round = __builtin__.round

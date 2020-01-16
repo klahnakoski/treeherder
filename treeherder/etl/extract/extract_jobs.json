@@ -39,7 +39,7 @@
             "classified_failure",
             "failure_classification.name",
             "job_group",
-            "machine_platform.platform",
+            "machine_platform",
             "matcher.name",
             "option.name",
             "repository.name",
@@ -105,6 +105,7 @@
     "debug": {
         "trace": true,
         "logs": [
+            {"log_type": "console"},
             {
                 "log_type": "logger",
                 "name": "extract_jobs"

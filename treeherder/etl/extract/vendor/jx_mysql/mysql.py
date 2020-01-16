@@ -10,6 +10,7 @@ from __future__ import absolute_import, division, unicode_literals
 
 import subprocess
 from datetime import datetime
+from urllib.parse import unquote
 
 from pymysql import InterfaceError, connect, cursors
 
@@ -90,7 +91,7 @@ class MySQL(object):
             # DECODE THE URI: mysql://username:password@host:optional_port/database_name
             up = strings.between(self.settings.host, "mysql://", "@")
             if ":" in up:
-                self.settings.username, self.settings.password = up.split(":")
+                self.settings.username, self.settings.password = unquote(up).split(":")
             else:
                 self.settings.username = up
 
@@ -283,6 +284,8 @@ class MySQL(object):
         self._execute_backlog()
 
         try:
+            if isinstance(sql, SQL):
+                sql = text(sql)
             if param:
                 sql = expand_template(sql, quote_param(param))
             sql = self.preamble + outdent(sql)
