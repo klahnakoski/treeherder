@@ -2,11 +2,9 @@ from jx_base.expressions import NULL
 from jx_mysql.mysql import MySQL
 from jx_mysql.mysql_snowflake_extractor import MySqlSnowflakeExtractor
 from mo_future import text
-from mo_json import value2json
 from mo_logs.strings import strip
 from mo_sql import SQL
 from mo_testing.fuzzytestcase import assertAlmostEqual
-from pyLibrary.convert import table2tab
 
 
 def test_make_repository(test_repository, extract_job_settings):
@@ -56,9 +54,7 @@ def test_extract_job(complex_job, extract_job_settings, now):
     acc = []
     with source.transaction():
         cursor = list(source.query(sql, stream=True, row_tuples=True))
-        tab = table2tab([c.column_alias for c in extractor.columns], cursor)
         extractor.construct_docs(cursor, acc.append, False)
-    example = value2json(acc, pretty=True)
 
     doc = acc[0]
     doc.guid = complex_job.guid
@@ -212,7 +208,7 @@ LEFT JOIN
 `test_treeherder`.`classified_failure` AS `t5` ON `t5`.`id` = `t4`.`classified_failure_id`) AS `a`
 ORDER BY
  `c0` IS NOT NULL , `c0`, `c62` IS NOT NULL , `c62`, `c67` IS NOT NULL , `c67`, `c72` IS NOT NULL , `c72`, `c77` IS NOT NULL , `c77`, `c83` IS NOT NULL , `c83`, `c86` IS NOT NULL , `c86`, `c98` IS NOT NULL , `c98`, `c120` IS NOT NULL , `c120`, `c130` IS NOT NULL , `c130`
-"""
+"""  # noqa: W291
 
 
 JOB = [

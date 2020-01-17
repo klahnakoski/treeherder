@@ -80,15 +80,20 @@ class ExtractAlerts:
                     last_modified=last_modified,
                     alert_id=alert_id,
                 )
-                last_year = Date.today() - (364 * DAY)  # ONLY YOUNG RECORDS CAN GO INTO BIGQUERY
+                last_year = Date.today() - (
+                    364 * DAY
+                )  # ONLY YOUNG RECORDS CAN GO INTO BIGQUERY
                 get_ids = SQL(
                     "SELECT s.id "
                     + "\nFROM treeherder.performance_alert_summary s"
                     + "\nLEFT JOIN treeherder.performance_alert a ON s.id=a.summary_id"
-                    + "\nWHERE s.created>"+quote_value(last_year).sql+" AND (s.last_updated > "
+                    + "\nWHERE s.created>"
+                    + quote_value(last_year).sql
+                    + " AND (s.last_updated > "
                     + quote_value(last_modified).sql
                     + "\nOR a.last_updated > "
-                    + quote_value(last_modified).sql+")"
+                    + quote_value(last_modified).sql
+                    + ")"
                     + "\nGROUP BY s.id"
                     + "\nORDER BY s.id"
                     + "\nLIMIT "

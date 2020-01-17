@@ -6,7 +6,7 @@ import pytest
 from mo_logs import strings, startup, constants
 from mo_logs.convert import unix2datetime
 from mo_math.randoms import Random
-from mo_times import Date, dates
+from mo_times import Date
 from tests.test_utils import create_generic_job
 from treeherder.config.settings import DATABASES
 from treeherder.etl.extract import extract_jobs
@@ -77,7 +77,6 @@ def complex_job(
         option_collection_hash=Random.base64(5), option=debug
     )
 
-    job_time = now
     job = Job.objects.create(
         autoclassify_status=1,
         guid=Random.base64(20),
@@ -113,101 +112,93 @@ def complex_job(
         }
     )
 
-    text_log_error1 = TextLogError.objects.create(
+    TextLogError.objects.create(
         step=text_log_step, line="line contents here", line_number=619845839
     )
-    text_log_error2 = TextLogError.objects.create(
+    TextLogError.objects.create(
         step=text_log_step, line="ERROR! more line contents", line_number=6
     )
 
-    tmd = TaskclusterMetadata.objects.create(
+    TaskclusterMetadata.objects.create(
         job=job, retry_id=0, task_id="WWb9ExAvQUa78ku0DIxdSQ"
     )
 
-    job_details = [
-        JobDetail.objects.create(
-            job_id=job.id,
-            **{
-                "title": "artifact uploaded",
-                "url": "https://example.com/api/queue/v1/task/WWb9ExAvQUa78ku0DIxdSQ/runs/0/artifacts/public/test_info/wpt_raw.log",
-                "value": "wpt_raw.log",
-            }
-        ),
-        JobDetail.objects.create(
-            job_id=job.id,
-            **{
-                "title": "artifact uploaded",
-                "url": "https://example.com/api/queue/v1/task/WWb9ExAvQUa78ku0DIxdSQ/runs/0/artifacts/public/test_info/wptreport.json",
-                "value": "wptreport.json",
-            }
-        ),
-        JobDetail.objects.create(
-            job_id=job.id, **{"title": "CPU usage", "value": "26.8%"}
-        ),
-        JobDetail.objects.create(
-            job_id=job.id,
-            **{"title": "I/O read bytes / time", "value": "179,900,416 / 41"}
-        ),
-    ]
-    # cf = ClassifiedFailure.objects.create(**{"created": 77, "modified": "autoland"})
+    JobDetail.objects.create(
+        job_id=job.id,
+        **{
+            "title": "artifact uploaded",
+            "url": "https://example.com/api/queue/v1/task/WWb9ExAvQUa78ku0DIxdSQ/runs/0/artifacts/public/test_info/wpt_raw.log",
+            "value": "wpt_raw.log",
+        }
+    )
+    JobDetail.objects.create(
+        job_id=job.id,
+        **{
+            "title": "artifact uploaded",
+            "url": "https://example.com/api/queue/v1/task/WWb9ExAvQUa78ku0DIxdSQ/runs/0/artifacts/public/test_info/wptreport.json",
+            "value": "wptreport.json",
+        }
+    )
+    JobDetail.objects.create(job_id=job.id, **{"title": "CPU usage", "value": "26.8%"})
+    JobDetail.objects.create(
+        job_id=job.id, **{"title": "I/O read bytes / time", "value": "179,900,416 / 41"}
+    )
 
-    job_logs = [
-        JobLog.objects.create(
-            **{
-                "job_id": job.id,
-                "name": "builds-4h",
-                "status": 1,
-                "url": "https://example.com/api/queue/v1/task/WWb9ExAvQUa78ku0DIxdSQ/runs/0/artifacts/public/logs/live_backing.log",
-            }
-        ),
-        JobLog.objects.create(
-            **{
-                "job_id": job.id,
-                "name": "errorsummary_json",
-                "status": 1,
-                "url": "https://example.com/api/queue/v1/task/WWb9ExAvQUa78ku0DIxdSQ/runs/0/artifacts/public/test_info/wpt_errorsummary.log",
-            }
-        ),
-    ]
+    job_logs1 = JobLog.objects.create(
+        **{
+            "job_id": job.id,
+            "name": "builds-4h",
+            "status": 1,
+            "url": "https://example.com/api/queue/v1/task/WWb9ExAvQUa78ku0DIxdSQ/runs/0/artifacts/public/logs/live_backing.log",
+        }
+    )
+    JobLog.objects.create(
+        **{
+            "job_id": job.id,
+            "name": "errorsummary_json",
+            "status": 1,
+            "url": "https://example.com/api/queue/v1/task/WWb9ExAvQUa78ku0DIxdSQ/runs/0/artifacts/public/test_info/wpt_errorsummary.log",
+        }
+    )
 
-    bcf = ClassifiedFailure.objects.create(**{
-        "bug_number": 1234567,
-        "created":  unix2datetime(Date("2020-01-17 12:00:00").unix),
-        "modified": unix2datetime(Date("2020-01-17 12:00:00").unix),
-    })
+    bcf = ClassifiedFailure.objects.create(
+        **{
+            "bug_number": 1234567,
+            "created": unix2datetime(Date("2020-01-17 12:00:00").unix),
+            "modified": unix2datetime(Date("2020-01-17 12:00:00").unix),
+        }
+    )
 
-    failure_lines = [
-        FailureLine.objects.create(
-            job_log=job_logs[1],
-            **{
-                "action": "test_groups",
-                "best_classification": bcf,
-                "best_is_verified":True,
-                "repository": repo,
-                "job_guid": job.guid,
-                "line": 15,
-                "modified": 0,
-                "stackwalk_stderr": 1578432686,
-                "stackwalk_stdout": 1578432686,
-            }
-        ),
-        FailureLine.objects.create(
-            job_log=job_logs[1],
-            **{
-                "action": "crash",
-                "best_classification": bcf,
-                "best_is_verified":False,
-                "repository": repo,
-                "job_guid": job.guid,
-                "line": 24031,
-                "modified": 0,
-                "signature": "@ mozilla::dom::CustomElementData::SetCustomElementDefinition(mozilla::dom::CustomElementDefinition*)",
-                "stackwalk_stderr": 1578432686,
-                "stackwalk_stdout": 1578432686,
-                "test": "/custom-elements/upgrading.html",
-            }
-        ),
-    ]
+    FailureLine.objects.create(
+        job_log=job_logs1,
+        **{
+            "action": "test_groups",
+            "best_classification": bcf,
+            "best_is_verified": True,
+            "repository": repo,
+            "job_guid": job.guid,
+            "line": 15,
+            "modified": 0,
+            "stackwalk_stderr": 1578432686,
+            "stackwalk_stdout": 1578432686,
+        }
+    )
+    FailureLine.objects.create(
+        job_log=job_logs1,
+        **{
+            "action": "crash",
+            "best_classification": bcf,
+            "best_is_verified": False,
+            "repository": repo,
+            "job_guid": job.guid,
+            "line": 24031,
+            "modified": 0,
+            "signature": "@ mozilla::dom::CustomElementData::SetCustomElementDefinition(mozilla::dom::CustomElementDefinition*)",
+            "stackwalk_stderr": 1578432686,
+            "stackwalk_stdout": 1578432686,
+            "test": "/custom-elements/upgrading.html",
+        }
+    )
 
     return job
 

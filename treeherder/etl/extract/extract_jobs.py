@@ -1,12 +1,12 @@
 from redis import Redis
 
 from jx_bigquery import bigquery
-from jx_mysql.mysql import sql_query, MySQL, sql_alias, quote_value
+from jx_mysql.mysql import sql_query, MySQL
 from jx_mysql.mysql_snowflake_extractor import MySqlSnowflakeExtractor
 from mo_files import File
 from mo_json import json2value, value2json
 from mo_logs import Log, startup, constants
-from mo_sql import SQL, ConcatSQL, SQL_SELECT
+from mo_sql import SQL
 from mo_times import Timer
 from mo_times.dates import parse
 from treeherder.etl.extract import VENDOR_PATH
@@ -28,8 +28,7 @@ class ExtractJobs:
 
         # SETUP DESTINATION
         destination = bigquery.Dataset(
-            dataset=settings.extractor.app_name,
-            kwargs=settings.destination
+            dataset=settings.extractor.app_name, kwargs=settings.destination
         ).get_or_create_table(settings.destination)
 
         try:
@@ -73,32 +72,34 @@ class ExtractJobs:
                 )
 
                 # Example: job.id ==283890114
-                get_ids = ConcatSQL((SQL_SELECT, sql_alias(quote_value(283890114), "id")))
-                # get_ids = sql_query(
-                #     {
-                #         "from": "job",
-                #         "select": ["id"],
-                #         "where": {
-                #             "or": [
-                #                 {"gt": {"last_modified": parse(last_modified)}},
-                #                 {
-                #                     "and": [
-                #                         {"eq": {"last_modified": parse(last_modified)}},
-                #                         {"gt": {"id": job_id}},
-                #                     ]
-                #                 },
-                #             ]
-                #         },
-                #         "sort": ["last_modified", "id"],
-                #         "limit": settings.extractor.chunk_size,
-                #     }
+                # get_ids = ConcatSQL(
+                #     (SQL_SELECT, sql_alias(quote_value(283890114), "id"))
                 # )
+                get_ids = sql_query(
+                    {
+                        "from": "job",
+                        "select": ["id"],
+                        "where": {
+                            "or": [
+                                {"gt": {"last_modified": parse(last_modified)}},
+                                {
+                                    "and": [
+                                        {"eq": {"last_modified": parse(last_modified)}},
+                                        {"gt": {"id": job_id}},
+                                    ]
+                                },
+                            ]
+                        },
+                        "sort": ["last_modified", "id"],
+                        "limit": settings.extractor.chunk_size,
+                    }
+                )
 
                 sql = extractor.get_sql(get_ids)
 
                 # PULL FROM source, AND PUSH TO destination
                 acc = []
-                with source.transaction() as t:
+                with source.transaction():
                     cursor = source.query(sql, stream=True, row_tuples=True)
                     extractor.construct_docs(cursor, acc.append, False)
                 if not acc:

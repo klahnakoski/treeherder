@@ -27,8 +27,7 @@ class ExtractPerf:
 
         # SETUP DESTINATION
         destination = bigquery.Dataset(
-            dataset=settings.extractor.app_name,
-            kwargs=settings.destination
+            dataset=settings.extractor.app_name, kwargs=settings.destination
         ).get_or_create_table(settings.destination)
 
         try:
@@ -65,10 +64,7 @@ class ExtractPerf:
             source = MySQL(settings.source.database)
 
             while True:
-                Log.note(
-                    "Extracting perfs for perf.id={{perf_id}}",
-                    perf_id=perf_id,
-                )
+                Log.note("Extracting perfs for perf.id={{perf_id}}", perf_id=perf_id)
 
                 get_ids = sql_query(
                     {
@@ -84,7 +80,7 @@ class ExtractPerf:
 
                 # PULL FROM source, AND PUSH TO destination
                 acc = []
-                with source.transaction() as t:
+                with source.transaction():
                     cursor = source.query(sql, stream=True, row_tuples=True)
                     extractor.construct_docs(cursor, acc.append, False)
                 if not acc:
@@ -101,10 +97,7 @@ class ExtractPerf:
                 # RECORD THE STATE
                 last_doc = acc[-1]
                 perf_id = last_doc.id
-                redis.set(
-                    settings.extractor.key,
-                    value2json(perf_id).encode("utf8"),
-                )
+                redis.set(settings.extractor.key, value2json(perf_id).encode("utf8"))
 
                 if len(acc) < settings.extractor.chunk_size:
                     break
