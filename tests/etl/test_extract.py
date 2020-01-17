@@ -1,45 +1,65 @@
-import os
-
-import pytest
-
-from jx_mysql.mysql import MySQL, quote_column
+from jx_base.expressions import NULL
+from jx_mysql.mysql import MySQL
 from jx_mysql.mysql_snowflake_extractor import MySqlSnowflakeExtractor
 from mo_future import text
 from mo_json import value2json
-from mo_logs import startup, constants, Log
 from mo_logs.strings import strip
-from mo_math.randoms import Random
 from mo_sql import SQL
 from mo_testing.fuzzytestcase import assertAlmostEqual
-from mo_times.dates import unix2datetime, Date
-from treeherder.etl.extract import extract_jobs
-from treeherder.model.models import (
-    JobDetail,
-    JobLog,
-    FailureLine,
-    Repository,
-    FailureClassification,
-    Push,
-    RepositoryGroup,
-    ClassifiedFailure,
-    Job,
-)
+from pyLibrary.convert import table2tab
 
 
-# VERIFY JSON DOCUMENT
-
-
-def test_extract_job(extract_job_settings, clean_db, complex_job):
+def test_make_repository(test_repository, extract_job_settings):
+    # TEST EXISTING FIXTURE MAKES AN OBJECT IN THE DATABASE
     source = MySQL(extract_job_settings.source.database)
+    with source.transaction():
+        result = source.query(SQL("SELECT * from repository"))
+
+    # verify the repository object is the one we expect
+    assert result[0].id == test_repository.id
+    assert result[0].tc_root_url == test_repository.tc_root_url
+
+
+def test_make_failure_class(failure_class, extract_job_settings):
+    # TEST I CAN MAKE AN OBJECT IN THE DATABASE
+    source = MySQL(extract_job_settings.source.database)
+    with source.transaction():
+        result = source.query(SQL("SELECT * from failure_classification"))
+
+    # verify the repository object is the one we expect
+    assert result[0].name == "not classified"
+
+
+def test_make_job(complex_job, extract_job_settings):
+    source = MySQL(extract_job_settings.source.database)
+    with source.transaction():
+        result = source.query(SQL("SELECT count(1) as num from job_detail"))
+
+    assert result[0].num == 4
+
+
+def test_extract_job(complex_job, extract_job_settings, now):
+    source = MySQL(extract_job_settings.source.database)
+    # with source.transaction():
+    #     result = source.query(SQL("SELECT * from text_log_error"))
+    # assert result[0].guid == complex_job.guid
     extractor = MySqlSnowflakeExtractor(extract_job_settings.source)
     sql = extractor.get_sql(SQL("SELECT " + text(complex_job.id) + " as id"))
 
+
+
     acc = []
-    with source.transaction() as t:
-        cursor = source.query(sql, stream=True, row_tuples=True)
+    with source.transaction():
+        cursor = list(source.query(sql, stream=True, row_tuples=True))
+        tab = table2tab([c.column_alias for c in extractor.columns], cursor)
         extractor.construct_docs(cursor, acc.append, False)
     example = value2json(acc, pretty=True)
-    assertAlmostEqual(acc, JOB)
+
+    doc = acc[0]
+    doc.guid = complex_job.guid
+    doc.last_modified = complex_job.last_modified
+
+    assertAlmostEqual(acc, JOB, places=4)
 
 
 # VERIFY SQL OVER DATABASE
@@ -47,156 +67,6 @@ def test_extract_job_sql(extract_job_settings, transactional_db):
     extractor = MySqlSnowflakeExtractor(extract_job_settings.source)
     sql = extractor.get_sql(SQL("SELECT 0"))
     assert strip(sql.sql) == strip(EXTRACT_JOB_SQL)
-
-
-@pytest.fixture
-def clean_db(transactional_db, extract_job_settings):
-    source = MySQL(extract_job_settings.source.database)
-    with source.transaction():
-        tables = source.query("select table_name from information_schema.tables where table_schema='treeherder' and table_type='BASE TABLE'")
-    errors = 1
-    while errors:
-        errors = 0
-        for t in tables:
-            try:
-                with source.transaction():
-                    source.execute(SQL("delete from ")+quote_column(t.table_name))
-            except Exception as e:
-                Log.note("Can not delete {{table}}", table=t.table_name, cause=e)
-                errors += 1
-
-@pytest.fixture
-def complex_job(clean_db, generic_reference_data, test_repository, extract_job_settings):
-    fc = FailureClassification.objects.create(id=1, name="not classified")
-    repository_group = RepositoryGroup.objects.create(name="common")
-    repo = Repository.objects.create(name="autoland", repository_group=repository_group)
-    push = Push.objects.create(
-        **{
-            "author": "testing@mozilla.com",
-            "repository": repo,
-            "revision": "ae6bb3a1066959a8c43d003a3caab0af769455bf",
-            "time": unix2datetime(1578427105),
-        }
-    )
-
-    job_time = unix2datetime(Date.now().unix)
-    job = Job.objects.create(
-        autoclassify_status=1,
-        guid=Random.base64(20),
-        repository=test_repository,
-        push_id=push.id,
-        signature=generic_reference_data.signature,
-        build_platform=generic_reference_data.build_platform,
-        machine_platform=generic_reference_data.machine_platform,
-        machine=generic_reference_data.machine,
-        option_collection_hash=generic_reference_data.option_collection_hash,
-        job_type=generic_reference_data.job_type,
-        job_group=generic_reference_data.job_group,
-        product=generic_reference_data.product,
-        failure_classification_id=fc.id,
-        who="example@mozilla.com",
-        reason="scheduled",
-        result="success",
-        state="completed",
-        submit_time=job_time,
-        start_time=job_time,
-        end_time=job_time,
-        tier=1,
-    )
-    job.save(force_insert=True)
-
-    source = MySQL(extract_job_settings.source.database)
-    with source.transaction():
-        result = source.query(SQL("SELECT count(1) from job_detail"))
-
-    job_details = [
-        JobDetail.objects.create(
-            job_id=job.id,
-            **{
-                "title": "artifact uploaded",
-                "url": "https://firefox-ci-tc.services.mozilla.com/api/queue/v1/task/WWb9ExAvQUa78ku0DIxdSQ/runs/0/artifacts/public/test_info/wpt_raw.log",
-                "value": "wpt_raw.log",
-            }
-        ),
-        JobDetail.objects.create(
-            job_id=job.id,
-            **{
-                "title": "artifact uploaded",
-                "url": "https://firefox-ci-tc.services.mozilla.com/api/queue/v1/task/WWb9ExAvQUa78ku0DIxdSQ/runs/0/artifacts/public/test_info/wptreport.json",
-                "value": "wptreport.json",
-            }
-        ),
-        JobDetail.objects.create(
-            job_id=job.id, **{"title": "CPU usage", "value": "26.8%"}
-        ),
-        JobDetail.objects.create(
-            job_id=job.id,
-            **{"title": "I/O read bytes / time", "value": "179,900,416 / 41"}
-        ),
-    ]
-    cf = ClassifiedFailure.objects.create(**{"created": 77, "modified": "autoland"})
-
-    job_logs = [
-        JobLog.objects.create(
-            **{
-                "job_id": job.id,
-                "name": "builds-4h",
-                "status": 1,
-                "url": "https://example.com/api/queue/v1/task/WWb9ExAvQUa78ku0DIxdSQ/runs/0/artifacts/public/logs/live_backing.log",
-            }
-        ),
-        JobLog.objects.create(
-            **{
-                "job_id": job.id,
-                "name": "errorsummary_json",
-                "status": 1,
-                "url": "https://example.com/api/queue/v1/task/WWb9ExAvQUa78ku0DIxdSQ/runs/0/artifacts/public/test_info/wpt_errorsummary.log",
-            }
-        ),
-    ]
-
-    failure_lines = [
-        FailureLine.objects.create(
-            **{
-                "action": "test_groups",
-                "best_classification": cf,
-                "repository": repo,
-                "job_guid": job.guid,
-                "line": 15,
-                "modified": 0,
-                "stackwalk_stderr": 1578432686,
-                "stackwalk_stdout": 1578432686,
-            }
-        ),
-        FailureLine.objects.create(
-            **{
-                "action": "crash",
-                "best_classification": cf,
-                "repository": repo,
-                "job_guid": job.guid,
-                "line": 24031,
-                "modified": 0,
-                "signature": "@ mozilla::dom::CustomElementData::SetCustomElementDefinition(mozilla::dom::CustomElementDefinition*)",
-                "stackwalk_stderr": 1578432686,
-                "stackwalk_stdout": 1578432686,
-                "test": "/custom-elements/upgrading.html",
-            }
-        ),
-    ]
-    return job
-
-
-@pytest.fixture
-def extract_job_settings():
-    # NOT NEEDED FOR TESTING
-    os.environ["NEW_RELIC_APP_NAME"] = "testing"
-    os.environ["BIGQUERY_PRIVATE_KEY_ID"] = "1"
-    os.environ["BIGQUERY_PRIVATE_KEY"] = "1"
-
-    settings = startup.read_settings(filename=extract_jobs.CONFIG_FILE, complain=False)
-    settings.source.database.ssl = None  # NOT REQUIRED FOR TEST DATABASE
-    constants.set(settings.constants)
-    return settings
 
 
 EXTRACT_JOB_SQL = """
@@ -353,102 +223,113 @@ JOB = [
     {
         "autoclassify_status": 1,
         "build_platform": {
-            "architecture": "-",
-            "os_name": "-",
-            "platform": "windows10-64",
+            "architecture": "x86",
+            "os_name": "my_os",
+            "platform": "my_platform",
         },
+        "submit_time": 1578427253,
+        "start_time": 1578430841,
         "end_time": 1578432680,
         "failure_classification": "not classified",
-        "guid": "5966fd13-102f-4146-bbf2-4bb40c8c5d49/0",
-        "id": 283890114,
+        "id": 1,
         "job_detail": [
             {
                 "title": "artifact uploaded",
-                "url": "https://firefox-ci-tc.services.mozilla.com/api/queue/v1/task/WWb9ExAvQUa78ku0DIxdSQ/runs/0/artifacts/public/test_info/wpt_raw.log",
+                "url": "https://example.com/api/queue/v1/task/WWb9ExAvQUa78ku0DIxdSQ/runs/0/artifacts/public/test_info/wpt_raw.log",
                 "value": "wpt_raw.log",
             },
             {
                 "title": "artifact uploaded",
-                "url": "https://firefox-ci-tc.services.mozilla.com/api/queue/v1/task/WWb9ExAvQUa78ku0DIxdSQ/runs/0/artifacts/public/test_info/wptreport.json",
+                "url": "https://example.com/api/queue/v1/task/WWb9ExAvQUa78ku0DIxdSQ/runs/0/artifacts/public/test_info/wptreport.json",
                 "value": "wptreport.json",
             },
             {"title": "CPU usage", "value": "26.8%"},
             {"title": "I/O read bytes / time", "value": "179,900,416 / 41"},
         ],
-        "job_group": {"name": "Web platform tests", "symbol": "W"},
+        "job_group": {"description": NULL, "name": "myjobgroup", "symbol": "S"},
         "job_log": [
             {
                 "name": "builds-4h",
                 "status": 1,
-                "url": "https://firefox-ci-tc.services.mozilla.com/api/queue/v1/task/WWb9ExAvQUa78ku0DIxdSQ/runs/0/artifacts/public/logs/live_backing.log",
+                "url": "https://example.com/api/queue/v1/task/WWb9ExAvQUa78ku0DIxdSQ/runs/0/artifacts/public/logs/live_backing.log",
             },
             {
                 "failure_line": [
                     {
                         "action": "test_groups",
-                        "best_classification": {"created": 77, "modified": "autoland"},
-                        "job_guid": "5966fd13-102f-4146-bbf2-4bb40c8c5d49/0",
+                        "best_classification": {
+                            "bug_number": 1579215297,
+                            "created": 2,
+                            "modified": "autoland",
+                        },
+                        "best_is_verified": 1579215297,
+                        "created": 1,
                         "line": 15,
-                        "modified": 0,
-                        "stackwalk_stderr": 1578432686,
-                        "stackwalk_stdout": 1578432686,
+                        "line_number": 1,
+                        "modified": 2,
+                        "stackwalk_stderr": 1579215297,
+                        "stackwalk_stdout": 0,
                     },
                     {
                         "action": "crash",
-                        "best_classification": {"created": 77, "modified": "autoland"},
-                        "job_guid": "5966fd13-102f-4146-bbf2-4bb40c8c5d49/0",
+                        "best_classification": {
+                            "bug_number": 1579215447,
+                            "created": 2,
+                            "modified": "autoland",
+                        },
+                        "best_is_verified": 1579215447,
+                        "created": 1,
                         "line": 24031,
-                        "modified": 0,
+                        "line_number": 1,
+                        "modified": 2,
                         "signature": "@ mozilla::dom::CustomElementData::SetCustomElementDefinition(mozilla::dom::CustomElementDefinition*)",
-                        "stackwalk_stderr": 1578432686,
-                        "stackwalk_stdout": 1578432686,
+                        "stackwalk_stderr": 1579215447,
+                        "stackwalk_stdout": 0,
                         "test": "/custom-elements/upgrading.html",
                     },
                 ],
                 "name": "errorsummary_json",
                 "status": 1,
-                "url": "https://firefox-ci-tc.services.mozilla.com/api/queue/v1/task/WWb9ExAvQUa78ku0DIxdSQ/runs/0/artifacts/public/test_info/wpt_errorsummary.log",
+                "url": "https://example.com/api/queue/v1/task/WWb9ExAvQUa78ku0DIxdSQ/runs/0/artifacts/public/test_info/wpt_errorsummary.log",
             },
         ],
-        "job_type": {
-            "name": "test-windows10-64/debug-web-platform-tests-e10s-2",
-            "symbol": "wpt2",
+        "job_type": {"name": "myjob", "symbol": "j"},
+        "machine": {"name": "mymachine"},
+        "machine_platform": {
+            "architecture": "x86",
+            "os_name": "my_os",
+            "platform": "my_platform",
         },
-        "last_modified": 1578432686.364459,
-        "machine": {"name": "i-00f7038e3197fc823"},
-        "machine_platform": "windows10-64",
-        "option_collection": {"option": "debug"},
-        "product": {"name": "unknown"},
+        "options": {"option": "debug"},
+        "product": {"name": "myproduct"},
         "push": {
-            "author": "htwyford@mozilla.com",
+            "author": "testing@mozilla.com",
             "repository": "autoland",
             "revision": "ae6bb3a1066959a8c43d003a3caab0af769455bf",
-            "time": 1578427105,
+            "time": 1578445105,
         },
         "reason": "scheduled",
-        "repository": "autoland",
+        "repository": "test_treeherder_jobs",
         "result": "success",
         "signature": {
-            "build_architecture": "-",
-            "build_os_name": "-",
-            "build_platform": "windows10-64",
-            "build_system_type": "taskcluster",
-            "first_submission_timestamp": 1555448841,
-            "job_group_name": "Web platform tests",
-            "job_group_symbol": "W",
-            "job_type_name": "test-windows10-64/debug-web-platform-tests-e10s-2",
-            "job_type_symbol": "wpt2",
-            "machine_architecture": "-",
-            "machine_os_name": "-",
-            "machine_platform": "windows10-64",
-            "name": "03feb288ff28dd3ee7caf0dbdb4580fe7b5fc3f9",
-            "option_collection_hash": "32faaecac742100f7753f0c1d0aa0add01b4046b",
-            "repository": "autoland",
-            "signature": "03feb288ff28dd3ee7caf0dbdb4580fe7b5fc3f9",
+            "build_architecture": "x86",
+            "build_os_name": "my_os",
+            "build_platform": "my_platform",
+            "build_system_type": "buildbot",
+            "first_submission_timestamp": 0,
+            "job_group_name": "myjobgroup",
+            "job_group_symbol": "S",
+            "job_type_name": "myjob",
+            "job_type_symbol": "j",
+            "machine_architecture": "x86",
+            "machine_os_name": "my_os",
+            "machine_platform": "my_platform",
+            "name": "myreferencedatasignaeture",
+            "option_collection_hash": "my_option_hash",
+            "repository": "test_treeherder_jobs",
+            "signature": "1234",
         },
-        "start_time": 1578430841,
         "state": "completed",
-        "submit_time": 1578427253,
         "taskcluster_metadata": [{"retry_id": 0, "task_id": "WWb9ExAvQUa78ku0DIxdSQ"}],
         "text_log_step": [
             {
@@ -456,10 +337,13 @@ JOB = [
                 "name": "Unnamed step",
                 "result": 7,
                 "started_line_number": 0,
-                "text_log_error": [{"line": 619845839}, {"line": 619845839}],
+                "text_log_error": [
+                    {"line": "line contents here", "line_number": 619845839},
+                    {"line": "ERROR! more line contents", "line_number": 6},
+                ],
             }
         ],
         "tier": 1,
-        "who": "htwyford@mozilla.com",
+        "who": "example@mozilla.com",
     }
 ]

@@ -16,12 +16,12 @@
             ""
         ],
         "add_relations": [
-            "treeherder.performance_datum.ds_job_id -> treeherder.job.project_specific_id",
-            "treeherder.performance_datum.repository_id -> treeherder.job.repository_id",
-            "treeherder.job.option_collection_hash -> treeherder.option_collection.option_collection_hash",
-            "treeherder.job.failure_classification_id -> treeherder.failure_classification.id",
-            "treeherder.job.autoclassify_status -> treeherder.failure_classification.id"
+            "job.option_collection_hash -> option_collection.option_collection_hash",
+            "text_log_error.step_id -> text_log_step.id"
         ],
+        "name_relations": {
+            "job\\.option_collection_hash -> option_collection\\.option_collection_hash": "options"
+        },
         "include": [],
         "exclude": [
             "auth_user",
@@ -47,7 +47,6 @@
         ],
         "database": {
             "debug": false,
-            "schema": "treeherder",
             "ssl": {
                 "ca": "https://s3.amazonaws.com/rds-downloads/rds-combined-ca-bundle.pem"
             },
