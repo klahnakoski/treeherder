@@ -57,9 +57,8 @@ if PY3:
         type(filter(lambda x: True, [])),
         type({}.items()),
         type({}.values()),
-        type(map(lambda: 0, [])),
-        type(reversed([])),
-        type(sorted([]))
+        type(map(lambda: 0, iter([]))),
+        type(reversed([]))
     )
     unichr = chr
 

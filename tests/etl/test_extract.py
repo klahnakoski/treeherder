@@ -267,8 +267,6 @@ JOB = [
                         "line": 15,
                         "line_number": 1,
                         "modified": 2,
-                        "stackwalk_stderr": 1579215297,
-                        "stackwalk_stdout": 0,
                     },
                     {
                         "action": "crash",
@@ -283,8 +281,6 @@ JOB = [
                         "line_number": 1,
                         "modified": 2,
                         "signature": "@ mozilla::dom::CustomElementData::SetCustomElementDefinition(mozilla::dom::CustomElementDefinition*)",
-                        "stackwalk_stderr": 1579215447,
-                        "stackwalk_stdout": 0,
                         "test": "/custom-elements/upgrading.html",
                     },
                 ],

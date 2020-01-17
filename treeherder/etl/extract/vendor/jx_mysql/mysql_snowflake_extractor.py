@@ -14,8 +14,6 @@ from __future__ import unicode_literals
 
 from copy import deepcopy, copy
 
-from more_itertools import last
-
 from jx_python import jx
 from mo_collections import UniqueIndex
 from mo_dots import (
@@ -34,6 +32,7 @@ from mo_dots import (
     startswith_field,
     listwrap,
 )
+from mo_dots.lists import last
 from mo_future import text, sort_using_key, first
 from mo_kwargs import override
 from mo_logs import Log, strings
@@ -853,21 +852,14 @@ class MySqlSnowflakeExtractor(object):
             # ONLY SELECT WHAT WE NEED, NULL THE REST
             selects = []
             not_null_column_seen = False
-            for ci, c in enumerate(self.columns):
-                if (
-                    c.column.table.name,
-                    c.column.column.name,
-                ) in self.settings.exclude_columns:
-                    continue
-                if c.column_alias[1:] != text(ci):
-                    Log.error("expecting consistency")
-                if c.nested_path[0] == nested_path[0]:
+            for c in self.columns:
+                if (c.column.table.name, c.column.column.name,) in self.settings.exclude_columns:
+                    selects.append(sql_alias(SQL_NULL, c.column_alias))
+                elif c.nested_path[0] == nested_path[0]:
                     s = sql_alias(
                         quote_column(c.table_alias, c.column.column.name),
                         c.column_alias,
                     )
-                    if s == None:
-                        Log.error("bug")
                     selects.append(s)
                     not_null_column_seen = True
                 elif startswith_field(nested_path[0], c.path):
@@ -899,19 +891,19 @@ class MySqlSnowflakeExtractor(object):
         """
         null_values = set(self.settings.null_values) | {None}
 
-        count = 0
+        doc_count = 0
 
         columns = tuple(wrap(c) for c in self.columns)
         with Timer("Downloading from MySQL"):
             curr_doc = Null
-            rownum = 0
+            row_count = 0
             for row in cursor:
-                rownum += 1
+                row_count += 1
                 if please_stop:
                     Log.error("Got `please_stop` signal")
 
                 nested_path = []
-                next_object = None
+                next_object = Data()
 
                 for c, value in zip(columns, row):
                     # columns ARE IN ORDER, FROM FACT ['.'] TO EVER-DEEPER-NESTED
@@ -927,38 +919,35 @@ class MySqlSnowflakeExtractor(object):
 
                 # OBJECT HAS BEEN CONSTRUCTED, LET'S PLACE IT WHERE IT BELONGS
                 if len(nested_path) > 1:
-                    # next_record IS NESTED AT curr_record[path] (FROM PREVIOUS row)
-                    path = nested_path[-2]
-                    children = curr_doc[path]
-                    if children == None:
-                        children = curr_doc[path] = wrap([])
-                    if len(nested_path) > 2:
+                    children = [curr_doc]
+                    steps = list(reversed(nested_path))
+                    parent_path = steps[0]
+                    for path in steps[1:]:
+                        parent = children[-1]
+                        relative_path = relative_field(path, parent_path)
+                        children = unwrap(parent[relative_path])
+                        if not children:
+                            children = parent[relative_path] = []
                         parent_path = path
-                        for path in list(reversed(nested_path[0:-2:])):
-                            parent = children.last()
-                            relative_path = relative_field(path, parent_path)
-                            children = parent[relative_path]
-                            if children == None:
-                                children = parent[relative_path] = wrap([])
-                            parent_path = path
 
                     children.append(next_object)
                     continue
 
+                # THE TOP-LEVEL next_object HAS BEEN ENCOUNTERED, EMIT THE PREVIOUS, AND COMPLETED curr_doc
                 if curr_doc == next_object:
-                    Log.error("not expected")
+                    Log.error("Expecting records. Did you select the wrong schema, or select records that do not exist?")
 
                 if curr_doc:
                     append(curr_doc["id"])
-                    count += 1
+                    doc_count += 1
                 curr_doc = next_object
 
             # DEAL WITH LAST RECORD
             if curr_doc:
                 append(curr_doc["id"])
-                count += 1
+                doc_count += 1
 
-        Log.note("{{num}} documents ({{rownum}} db records)", num=count, rownum=rownum)
+        Log.note("{{doc_count}} documents ({{row_count}} db records)", doc_count=doc_count, row_count=row_count)
 
 
 def full_name_string(column):
