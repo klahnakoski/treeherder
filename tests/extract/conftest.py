@@ -128,7 +128,7 @@ def complex_job(
         job_id=job.id, **{"title": "I/O read bytes / time", "value": "179,900,416 / 41"}
     )
 
-    job_logs1 = JobLog.objects.create(
+    JobLog.objects.create(
         **{
             "job_id": job.id,
             "name": "builds-4h",
@@ -136,7 +136,7 @@ def complex_job(
             "url": "https://example.com/api/queue/v1/task/WWb9ExAvQUa78ku0DIxdSQ/runs/0/artifacts/public/logs/live_backing.log",
         }
     )
-    JobLog.objects.create(
+    job_logs1 = JobLog.objects.create(
         **{
             "job_id": job.id,
             "name": "errorsummary_json",
