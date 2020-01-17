@@ -927,33 +927,20 @@ class MySqlSnowflakeExtractor(object):
 
                 # OBJECT HAS BEEN CONSTRUCTED, LET'S PLACE IT WHERE IT BELONGS
                 if len(nested_path) > 1:
-                    steps = list(reversed(nested_path))
-                    parent_path = steps[0]
-                    children = curr_doc[parent_path]
-                    for path in steps[1:]:
-                        parent = children.last()
-                        relative_path = relative_field(path, parent_path)
-                        children = parent[relative_path]
-                        if children == None:
-                            children = parent[relative_path] = wrap([])
-                        parent_path = path
-
-
-
                     # next_record IS NESTED AT curr_record[path] (FROM PREVIOUS row)
-                    # path = steps[1]
-                    # children = curr_doc[path]
-                    # if children == None:
-                    #     children = curr_doc[path] = wrap([])
-                    # if len(nested_path) > 2:
-                    #     parent_path = path
-                    #     for path in steps:
-                    #         parent = children.last()
-                    #         relative_path = relative_field(path, parent_path)
-                    #         children = parent[relative_path]
-                    #         if children == None:
-                    #             children = parent[relative_path] = wrap([])
-                    #         parent_path = path
+                    path = nested_path[-2]
+                    children = curr_doc[path]
+                    if children == None:
+                        children = curr_doc[path] = wrap([])
+                    if len(nested_path) > 2:
+                        parent_path = path
+                        for path in list(reversed(nested_path[0:-2:])):
+                            parent = children.last()
+                            relative_path = relative_field(path, parent_path)
+                            children = parent[relative_path]
+                            if children == None:
+                                children = parent[relative_path] = wrap([])
+                            parent_path = path
 
                     children.append(next_object)
                     continue
