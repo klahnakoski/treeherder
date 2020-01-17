@@ -1,7 +1,7 @@
 from redis import Redis
 
 try:  # AVOID isort
-    from treeherder.etl import extract
+    from treeherder import extract
 
     _ = extract
 
