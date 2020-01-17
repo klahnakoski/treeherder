@@ -1,11 +1,15 @@
 from redis import Redis
 
 from jx_bigquery import bigquery
-from jx_mysql.mysql import sql_query, MySQL
+from jx_mysql.mysql import (MySQL,
+                            sql_query)
 from jx_mysql.mysql_snowflake_extractor import MySqlSnowflakeExtractor
 from mo_files import File
-from mo_json import json2value, value2json
-from mo_logs import Log, startup, constants
+from mo_json import (json2value,
+                     value2json)
+from mo_logs import (Log,
+                     constants,
+                     startup)
 from mo_sql import SQL
 from mo_times import Timer
 from treeherder.etl.extract import VENDOR_PATH
