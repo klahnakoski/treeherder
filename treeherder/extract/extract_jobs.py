@@ -14,7 +14,7 @@ try:  # AVOID isort
     from mo_sql import SQL
     from mo_times import Timer
     from mo_times.dates import parse
-    from treeherder.etl.extract import VENDOR_PATH
+    from treeherder.extract import VENDOR_PATH
 except Exception as e:
     raise e
 

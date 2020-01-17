@@ -3,12 +3,12 @@
         "app_name": {
             "$ref": "env://NEW_RELIC_APP_NAME"
         },
-        "key": "treeherder.etl.extract.alert.state",
-        "sql": "treeherder.etl.extract.alert.sql",
-        "chunk_size": 500
+        "key": "treeherder.extract.perf.state",
+        "sql": "treeherder.extract.perf.sql",
+        "chunk_size": 4000
     },
     "source": {
-        "fact_table": "performance_alert_summary",
+        "fact_table": "performance_datum",
         "show_foreign_keys": false,
         "null_values": [
             "-",
@@ -16,33 +16,30 @@
             ""
         ],
         "add_relations": [],
-        "name_relations": {
-            "performance_alert_summary\\.id <- performance_alert\\.summary_id": "details",
-            "performance_alert_summary\\.id <- performance_alert\\.related_summary_id": "see_also"
-        },
         "include": [],
         "exclude": [
-            "auth_user",
-            "group_failure_lines",
-            "commit",
             "runnable_job",
-            "text_log_error_metadata",
-            "failure_line.stackwalk_stdout",
-            "failure_line.stackwalk_stderr"
+            "auth_user",
+            "job_log",
+            "text_log_step",
+            "performance_alert_summary",
+            "text_log_step",
+            "failure_line",
+            "job_note",
+            "job_detail"
         ],
-        "exclude_path": [],
+        "exclude_path": [
+            "id.signature.parent_signature",
+            "id.signature.performance_alert"
+        ],
         "reference_only": [
-            "performance_signature",
-            "push",
-            "classified_failure",
             "performance_framework.name",
-            "failure_classification.name",
-            "job_group",
-            "machine_platform.platform",
-            "matcher.name",
-            "option.name",
+            "user.email",
             "repository.name",
-            "user.email"
+            "machine_platform.platform",
+            "failure_classification.name",
+            "option.name",
+            "push"
         ],
         "database": {
             "debug": false,
@@ -74,11 +71,11 @@
         "dataset": {
             "$ref": "env://NEW_RELIC_APP_NAME"
         },
-        "table": "alerts",
+        "table": "perf",
         "top_level_fields": {},
         "id": {
             "field": "id",
-            "version": "last_updated"
+            "version": "job.submit_time"
         },
         "schema": {
             "id": "integer"
@@ -96,7 +93,7 @@
             {"log_type": "console"},
             {
                 "log_type": "logger",
-                "name": "extract_alerts"
+                "name": "extract_perf"
             }
         ]
     }

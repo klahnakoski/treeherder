@@ -12,7 +12,7 @@ from mo_logs import (Log,
                      startup)
 from mo_sql import SQL
 from mo_times import Timer
-from treeherder.etl.extract import VENDOR_PATH
+from treeherder.extract import VENDOR_PATH
 
 CONFIG_FILE = (File.new_instance(__file__).parent / "extract_perf.json").abspath
 

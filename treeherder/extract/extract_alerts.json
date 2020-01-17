@@ -3,43 +3,42 @@
         "app_name": {
             "$ref": "env://NEW_RELIC_APP_NAME"
         },
-        "key": "treeherder.etl.extract.job.state",
-        "sql": "treeherder.etl.extract.job.sql",
-        "chunk_size": 1000
+        "key": "treeherder.extract.alert.state",
+        "sql": "treeherder.extract.alert.sql",
+        "chunk_size": 500
     },
     "source": {
-        "fact_table": "job",
+        "fact_table": "performance_alert_summary",
         "show_foreign_keys": false,
         "null_values": [
             "-",
             "unknown",
             ""
         ],
-        "add_relations": [
-            "job.option_collection_hash -> option_collection.option_collection_hash",
-            "text_log_error.step_id -> text_log_step.id"
-        ],
+        "add_relations": [],
         "name_relations": {
-            "job\\.option_collection_hash -> option_collection\\.option_collection_hash": "options"
+            "performance_alert_summary\\.id <- performance_alert\\.summary_id": "details",
+            "performance_alert_summary\\.id <- performance_alert\\.related_summary_id": "see_also"
         },
         "include": [],
         "exclude": [
             "auth_user",
             "group_failure_lines",
             "commit",
-            "performance_datum",
-            "performance_alert_summary",
-            "performance_signature",
             "runnable_job",
             "text_log_error_metadata",
             "failure_line.stackwalk_stdout",
             "failure_line.stackwalk_stderr"
         ],
+        "exclude_path": [],
         "reference_only": [
+            "performance_signature",
+            "push",
             "classified_failure",
+            "performance_framework.name",
             "failure_classification.name",
             "job_group",
-            "machine_platform",
+            "machine_platform.platform",
             "matcher.name",
             "option.name",
             "repository.name",
@@ -75,24 +74,14 @@
         "dataset": {
             "$ref": "env://NEW_RELIC_APP_NAME"
         },
-        "table": "jobs",
+        "table": "alerts",
         "top_level_fields": {},
-        "partition": {
-            "field": "submit_time",
-            "expire": "2year"
-        },
         "id": {
             "field": "id",
-            "version": "last_modified"
+            "version": "last_updated"
         },
-        "cluster": [
-            "id",
-            "last_modified"
-        ],
         "schema": {
-            "id": "integer",
-            "submit_time": "time",
-            "last_modified": "time"
+            "id": "integer"
         },
         "sharded": true
     },
@@ -107,7 +96,7 @@
             {"log_type": "console"},
             {
                 "log_type": "logger",
-                "name": "extract_jobs"
+                "name": "extract_alerts"
             }
         ]
     }

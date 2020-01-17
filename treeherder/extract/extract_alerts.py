@@ -18,7 +18,7 @@ from mo_times import (DAY,
                       Timer)
 from mo_times.dates import (Date,
                             parse)
-from treeherder.etl.extract import VENDOR_PATH
+from treeherder.extract import VENDOR_PATH
 
 CONFIG_FILE = (File.new_instance(__file__).parent / "extract_alerts.json").abspath
 

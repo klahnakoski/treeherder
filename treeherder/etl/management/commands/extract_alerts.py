@@ -1,6 +1,6 @@
 from django.core.management.base import BaseCommand
 
-from treeherder.etl.extract.extract_alerts import ExtractAlerts
+from treeherder.extract.extract_alerts import ExtractAlerts
 
 
 class Command(BaseCommand):

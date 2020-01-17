@@ -1,6 +1,6 @@
 from django.core.management.base import BaseCommand
 
-from treeherder.etl.extract.extract_jobs import ExtractJobs
+from treeherder.extract.extract_jobs import ExtractJobs
 
 
 class Command(BaseCommand):

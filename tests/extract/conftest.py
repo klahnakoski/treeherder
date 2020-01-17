@@ -1,5 +1,5 @@
 try:  # AVOID isort
-    from treeherder.etl.extract import extract_jobs
+    from treeherder.extract import extract_jobs
 
     import os
     import pytest

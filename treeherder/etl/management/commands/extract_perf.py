@@ -1,6 +1,6 @@
 from django.core.management.base import BaseCommand
 
-from treeherder.etl.extract.extract_perf import ExtractPerf
+from treeherder.extract.extract_perf import ExtractPerf
 
 
 class Command(BaseCommand):

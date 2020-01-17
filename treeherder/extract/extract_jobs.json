@@ -3,43 +3,47 @@
         "app_name": {
             "$ref": "env://NEW_RELIC_APP_NAME"
         },
-        "key": "treeherder.etl.extract.perf.state",
-        "sql": "treeherder.etl.extract.perf.sql",
-        "chunk_size": 4000
+        "key": "treeherder.extract.job.state",
+        "sql": "treeherder.extract.job.sql",
+        "chunk_size": 1000
     },
     "source": {
-        "fact_table": "performance_datum",
+        "fact_table": "job",
         "show_foreign_keys": false,
         "null_values": [
             "-",
             "unknown",
             ""
         ],
-        "add_relations": [],
+        "add_relations": [
+            "job.option_collection_hash -> option_collection.option_collection_hash",
+            "text_log_error.step_id -> text_log_step.id"
+        ],
+        "name_relations": {
+            "job\\.option_collection_hash -> option_collection\\.option_collection_hash": "options"
+        },
         "include": [],
         "exclude": [
-            "runnable_job",
             "auth_user",
-            "job_log",
-            "text_log_step",
+            "group_failure_lines",
+            "commit",
+            "performance_datum",
             "performance_alert_summary",
-            "text_log_step",
-            "failure_line",
-            "job_note",
-            "job_detail"
-        ],
-        "exclude_path": [
-            "id.signature.parent_signature",
-            "id.signature.performance_alert"
+            "performance_signature",
+            "runnable_job",
+            "text_log_error_metadata",
+            "failure_line.stackwalk_stdout",
+            "failure_line.stackwalk_stderr"
         ],
         "reference_only": [
-            "performance_framework.name",
-            "user.email",
-            "repository.name",
-            "machine_platform.platform",
+            "classified_failure",
             "failure_classification.name",
+            "job_group",
+            "machine_platform",
+            "matcher.name",
             "option.name",
-            "push"
+            "repository.name",
+            "user.email"
         ],
         "database": {
             "debug": false,
@@ -71,14 +75,24 @@
         "dataset": {
             "$ref": "env://NEW_RELIC_APP_NAME"
         },
-        "table": "perf",
+        "table": "jobs",
         "top_level_fields": {},
+        "partition": {
+            "field": "submit_time",
+            "expire": "2year"
+        },
         "id": {
             "field": "id",
-            "version": "job.submit_time"
+            "version": "last_modified"
         },
+        "cluster": [
+            "id",
+            "last_modified"
+        ],
         "schema": {
-            "id": "integer"
+            "id": "integer",
+            "submit_time": "time",
+            "last_modified": "time"
         },
         "sharded": true
     },
@@ -93,7 +107,7 @@
             {"log_type": "console"},
             {
                 "log_type": "logger",
-                "name": "extract_perf"
+                "name": "extract_jobs"
             }
         ]
     }
