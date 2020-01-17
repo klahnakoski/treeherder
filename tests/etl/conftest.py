@@ -6,7 +6,7 @@ import pytest
 from mo_logs import strings, startup, constants
 from mo_logs.convert import unix2datetime
 from mo_math.randoms import Random
-from mo_times import Date
+from mo_times import Date, dates
 from tests.test_utils import create_generic_job
 from treeherder.config.settings import DATABASES
 from treeherder.etl.extract import extract_jobs
@@ -149,7 +149,7 @@ def complex_job(
             **{"title": "I/O read bytes / time", "value": "179,900,416 / 41"}
         ),
     ]
-    cf = ClassifiedFailure.objects.create(**{"created": 77, "modified": "autoland"})
+    # cf = ClassifiedFailure.objects.create(**{"created": 77, "modified": "autoland"})
 
     job_logs = [
         JobLog.objects.create(
@@ -170,12 +170,19 @@ def complex_job(
         ),
     ]
 
+    bcf = ClassifiedFailure.objects.create(**{
+        "bug_number": 1234567,
+        "created":  unix2datetime(Date("2020-01-17 12:00:00").unix),
+        "modified": unix2datetime(Date("2020-01-17 12:00:00").unix),
+    })
+
     failure_lines = [
         FailureLine.objects.create(
             job_log=job_logs[1],
             **{
                 "action": "test_groups",
-                "best_classification": cf,
+                "best_classification": bcf,
+                "best_is_verified":True,
                 "repository": repo,
                 "job_guid": job.guid,
                 "line": 15,
@@ -188,7 +195,8 @@ def complex_job(
             job_log=job_logs[1],
             **{
                 "action": "crash",
-                "best_classification": cf,
+                "best_classification": bcf,
+                "best_is_verified":False,
                 "repository": repo,
                 "job_guid": job.guid,
                 "line": 24031,
